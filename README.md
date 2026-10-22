@@ -71,7 +71,9 @@ bun examples/quick-start.ts
 ```
 
 More in [`examples/`](./examples), including provider-layer and multi-route registry examples and a
-[Cloudflare Worker deployment with alchemy.run](./examples/alchemy).
+[Cloudflare Worker deployment with alchemy.run](./examples/alchemy). The shorter
+snippets below are fragments inside `Effect.gen`; the files under `examples/`
+are complete runnable programs.
 
 ## Deploy with alchemy.run
 
@@ -101,6 +103,7 @@ The Worker wraps Alchemy's raw email binding with
 `CloudflareEmailService.make`, then uses the normal `Email.layer` and
 `Email.send` API. See the example README for setup, local development, and
 deployment commands.
+
 ## Send with a provider
 
 ```ts
