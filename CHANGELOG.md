@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+- Added `TransportRegistry` for route-keyed transports and
+  `Email.layerFromRegistry` / `Email.layerFromRegistryLayer`.
+- Added provider client/transport layer sharing tests and provider surface
+  conformance checks.
+- Added multi-route and provider-layer examples.
+- Updated README, runtime matrix, driver parity notes, release checklist, and
+  the transport/provider improvement plan.
+- Added the alchemy.run Cloudflare Worker deployment example.
+- Includes the 0.1.0 release baseline.
+
 ## 0.1.0
 
 Initial release.
