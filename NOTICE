@@ -1,0 +1,12 @@
+effect-email
+
+This project is an independent Effect port of unemail:
+https://github.com/productdevbook/unemail
+
+Upstream unemail is licensed under the MIT License.
+Copyright (c) 2025 Wind.
+
+The upstream revision used as the parity reference is:
+4d539b1590776fc68ab19653597f21f1b3ceb24b
+
+See docs/driver-parity.md for the provider parity manifest and attribution.

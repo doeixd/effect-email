@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a new capability or provider improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What use case or failure mode is not covered today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core message or transport
+        - Provider adapter
+        - Delivery store or queue
+        - Gateway or Catcher
+        - SMTP or MIME
+        - Workflow
+        - Templates or suppression
+        - Documentation or packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

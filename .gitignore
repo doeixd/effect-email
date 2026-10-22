@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+*.tgz
+.alchemy/
+.wrangler/
+*.eml

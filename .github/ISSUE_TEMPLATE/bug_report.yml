@@ -1,0 +1,49 @@
+name: Bug report
+description: Report incorrect behavior or a regression
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report security vulnerabilities here. See SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Node 22+
+        - Bun
+        - Deno
+        - Cloudflare Workers
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include code, provider, and relevant error output with secrets removed.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test or command output
