@@ -1277,7 +1277,8 @@ Status: Fixed.
   against PostgreSQL 16 during this review.
 - Provider tests are deterministic and use local HTTP/SMTP doubles.
 - Remaining test gaps: provider webhook signatures, live-provider sandbox tests,
-  concurrent PostgreSQL workers, SMTP connection exhaustion, and long-header
+  concurrent PostgreSQL workers, SMTP connection exhaustion, SMTP protocol
+  fuzzing, slow-client tests, common SMTP client integration, and long-header
   MIME/DKIM interoperability.
 ## Release recommendation
 

@@ -146,6 +146,38 @@ describe("SMTP session", () => {
       assert.strictEqual(test.writes.at(-1), "221 Bye\r\n")
     }))
 
+  it.effect("passes the authenticated principal into admission", () =>
+    Effect.gen(function* () {
+      const contexts: Array<
+        Session.SmtpAdmissionContext<{ readonly tenantId: string }>
+      > = []
+      const token = Base64.encode(
+        new TextEncoder().encode("\u0000user\u0000secret")
+      )
+      const test = connection([
+        `EHLO client\r\nAUTH PLAIN ${token}\r\nMAIL FROM:<sender@example.com>\r\nRCPT TO:<user@example.com>\r\nDATA\r\nbody\r\n.\r\nQUIT\r\n`
+      ])
+
+      yield* Session.runSession({
+        connection: test.value,
+        allowInsecureAuth: true,
+        authenticate: () =>
+          Effect.succeed({ tenantId: "tenant-1" }),
+        admit: (_submission, context) =>
+          Effect.sync(() => {
+            contexts.push(context)
+          })
+      })
+
+      assert.deepStrictEqual(contexts, [
+        {
+          authenticated: true,
+          principal: { tenantId: "tenant-1" },
+          tls: false
+        }
+      ])
+    }))
+
   it.effect("requires authentication by default when credentials are configured", () =>
     Effect.gen(function* () {
       const submissions: Array<SmtpSubmission> = []

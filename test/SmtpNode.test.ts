@@ -17,6 +17,26 @@ const transcript =
   ".\r\n" +
   "QUIT\r\n"
 
+const greeting = (
+  port: number
+): Promise<{ readonly socket: ReturnType<typeof createConnection>; readonly text: string }> =>
+  new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port })
+    const timeout = setTimeout(() => {
+      socket.destroy()
+      reject(new Error("timed out waiting for SMTP greeting"))
+    }, 5_000)
+    socket.setEncoding("utf8")
+    socket.once("data", (chunk) => {
+      clearTimeout(timeout)
+      resolve({ socket, text: String(chunk) })
+    })
+    socket.on("error", (cause) => {
+      clearTimeout(timeout)
+      reject(cause)
+    })
+  })
+
 const exchange = (
   port: number,
   payload: string
@@ -78,6 +98,26 @@ describe("Node SMTP server", () => {
       assert.deepStrictEqual(submissions[0]!.rcptTo, [
         "user@example.com"
       ])
+      yield* Fiber.interrupt(fiber)
+    }).pipe(Effect.scoped))
+
+  it.live("rejects excess connections with 421", () =>
+    Effect.gen(function* () {
+      const server = yield* NodeSmtp.start({
+        host: "127.0.0.1",
+        port: 0,
+        maxConnections: 1,
+        admit: () => Effect.void
+      })
+      const fiber = yield* server.run.pipe(Effect.forkScoped)
+      const port = "port" in server.address ? server.address.port : 0
+      const first = yield* Effect.promise(() => greeting(port))
+      const second = yield* Effect.promise(() => greeting(port))
+
+      assert.include(first.text, "220 ")
+      assert.include(second.text, "421 ")
+      first.socket.destroy()
+      second.socket.destroy()
       yield* Fiber.interrupt(fiber)
     }).pipe(Effect.scoped))
 

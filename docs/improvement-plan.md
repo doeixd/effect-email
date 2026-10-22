@@ -9,7 +9,7 @@ Implementation status (2026-10-22):
   client instance; added sharing tests and a provider surface conformance test.
 - Phase 3 complete: README route-registry guidance and package exports updated.
 - Phase 4 deprecation/removal not started.
-- Phase 5 verification complete: typecheck, 251 tests, build, dist smoke, and
+- Phase 5 verification complete: typecheck, 253 tests, build, dist smoke, and
   package dry-run pass.
 
 Scope: the `Transport`, `EmailTransport`, provider client, layer, and route

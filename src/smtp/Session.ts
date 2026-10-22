@@ -23,14 +23,21 @@ export interface SmtpCredentials {
   readonly password: string
 }
 
-export interface SmtpSessionOptions {
+export interface SmtpAdmissionContext<P = unknown> {
+  readonly authenticated: boolean
+  readonly principal?: P
+  readonly tls: boolean
+}
+
+export interface SmtpSessionOptions<P = unknown> {
   readonly connection: SmtpConnection
   readonly admit: (
-    submission: Smtp.SmtpSubmission
+    submission: Smtp.SmtpSubmission,
+    context: SmtpAdmissionContext<P>
   ) => Effect.Effect<void, EmailError>
   readonly authenticate?: (
     credentials: SmtpCredentials
-  ) => Effect.Effect<void, EmailError>
+  ) => Effect.Effect<P, EmailError>
   readonly requireAuthentication?: boolean
   readonly allowInsecureAuth?: boolean
   readonly tls?: boolean
@@ -59,8 +66,8 @@ const resetSession = (
     argument: ""
   }).state
 
-export const runSession = (
-  options: SmtpSessionOptions
+export const runSession = <P = unknown>(
+  options: SmtpSessionOptions<P>
 ): Effect.Effect<void, SmtpConnectionError> =>
   Effect.gen(function* () {
     const limit = (value: number | undefined, fallback: number): number =>
@@ -77,6 +84,7 @@ export const runSession = (
       options.requireAuthentication ?? options.authenticate !== undefined
     let tlsActive = options.tls === true
     let session = Smtp.initialSession
+    let principal: P | undefined
     let frame = Smtp.emptyLineFrame
     let decoder = Smtp.emptyDataDecoder
 
@@ -116,7 +124,11 @@ export const runSession = (
               decoded.content!
             )
             const accepted = yield* Effect.result(
-              options.admit(complete.submission!)
+              options.admit(complete.submission!, {
+                authenticated: session.authenticated,
+                ...(principal === undefined ? {} : { principal }),
+                tls: tlsActive
+              })
             )
             yield* options.connection.write(
               Smtp.encodeReply(
@@ -189,6 +201,7 @@ export const runSession = (
           )
           yield* options.upgradeTls
           tlsActive = true
+          principal = undefined
           session = Smtp.initialSession
           frame = Smtp.emptyLineFrame
           decoder = Smtp.emptyDataDecoder
@@ -265,6 +278,7 @@ export const runSession = (
             )
             continue
           }
+          principal = authenticated.success
           session = { ...session, authenticated: true }
           yield* options.connection.write(
             Smtp.encodeReply({

@@ -29,5 +29,8 @@ not import providers, Node server bindings, or SMTP adapters.
   remote URLs supported by the selected provider.
 - SMTP TLS and STARTTLS require a runtime with TCP/TLS sockets. The server
   binding uses `@effect/platform-node`.
+- The SMTP server is a submission gateway, not a full MTA. It does not provide
+  BDAT/CHUNKING, SMTPUTF8, MX lookup, remote-delivery scheduling, or bounce
+  generation.
 - Cloudflare bindings are injected values; the package does not import
   `cloudflare:email` or Worker-only globals.

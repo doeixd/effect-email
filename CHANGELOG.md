@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- SMTP `authenticate` can return a typed principal, and `admit` receives the
+  authenticated principal, authentication state, and TLS state.
+- Excess SMTP connections receive a `421 Too many connections` response.
+- Documented that the SMTP server is a submission gateway, not a full MTA.
+- Clarified that README snippets are fragments and linked complete examples.
+
 ## 0.2.0
 
 - Added `TransportRegistry` for route-keyed transports and

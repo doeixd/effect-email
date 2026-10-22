@@ -6,16 +6,19 @@ import * as NodeSocketServer from "@effect/platform-node/NodeSocketServer"
 import type { EmailError } from "../EmailError"
 import type { TlsOptions } from "node:tls"
 import type { SmtpSubmission } from "./Protocol"
+import { encodeReply } from "./Protocol"
 import {
   runSession,
-  SmtpConnectionError
+  SmtpConnectionError,
+  type SmtpAdmissionContext
 } from "./Session"
 
-export interface NodeSmtpOptions {
+export interface NodeSmtpOptions<P = unknown> {
   readonly host?: string
   readonly port?: number
   readonly admit: (
-    submission: SmtpSubmission
+    submission: SmtpSubmission,
+    context: SmtpAdmissionContext<P>
   ) => Effect.Effect<void, EmailError>
   readonly maxLineBytes?: number
   readonly maxMessageBytes?: number
@@ -24,7 +27,7 @@ export interface NodeSmtpOptions {
   readonly maxSessionMillis?: number
   readonly authenticate?: (
     credentials: import("./Session").SmtpCredentials
-  ) => Effect.Effect<void, EmailError>
+  ) => Effect.Effect<P, EmailError>
   readonly requireAuthentication?: boolean
   readonly allowInsecureAuth?: boolean
   readonly tls?: TlsOptions
@@ -50,8 +53,7 @@ const concat = (
 }
 
 const connectionFor = (
-  socket: Socket.Socket,
-  options: NodeSmtpOptions
+  socket: Socket.Socket
 ) =>
   Effect.gen(function* () {
     const reader = yield* socket.reader
@@ -98,8 +100,8 @@ const connectionFor = (
     }
   })
 
-export const start = (
-  options: NodeSmtpOptions
+export const start = <P = unknown>(
+  options: NodeSmtpOptions<P>
 ): Effect.Effect<
   NodeSmtpServer,
   SocketServerError,
@@ -135,7 +137,7 @@ export const start = (
     const handleSocket = (socket: Socket.Socket) =>
       Effect.scoped(
         Effect.gen(function* () {
-          const connection = yield* connectionFor(socket, options)
+          const connection = yield* connectionFor(socket)
           const session = runSession({
             connection,
             admit: options.admit,
@@ -178,12 +180,33 @@ export const start = (
         })
       ).pipe(Effect.catch(() => Effect.void))
 
+    const rejectExcess = (socket: Socket.Socket) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connectionFor(socket)
+          yield* connection.write(
+            encodeReply({
+              code: 421,
+              lines: ["Too many connections"]
+            })
+          )
+        })
+      ).pipe(Effect.catch(() => Effect.void))
+
     const handler = (socket: Socket.Socket) =>
       connectionLimit === undefined
         ? handleSocket(socket)
         : connectionLimit
             .withPermitsIfAvailable(1)(handleSocket(socket))
-            .pipe(Effect.asVoid, Effect.catch(() => Effect.void))
+            .pipe(
+              Effect.flatMap(
+                Option.match({
+                  onNone: () => rejectExcess(socket),
+                  onSome: () => Effect.void
+                })
+              ),
+              Effect.catch(() => Effect.void)
+            )
 
     return {
       address: server.address,
@@ -191,8 +214,8 @@ export const start = (
     }
   })
 
-export const serve = (
-  options: NodeSmtpOptions
+export const serve = <P = unknown>(
+  options: NodeSmtpOptions<P>
 ): Effect.Effect<never, SocketServerError> =>
   Effect.scoped(
     Effect.gen(function* () {

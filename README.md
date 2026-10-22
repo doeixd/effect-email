@@ -346,13 +346,24 @@ import * as NodeSmtp from "@doeixd/effect-email/smtp/Node"
 const server = yield* NodeSmtp.start({
   port: 2525,
   requireAuthentication: true,
-  authenticate: verifySmtpCredentials,
-  admit: (submission) => admission.acceptRaw(tenantId, submission)
+  authenticate: (credentials) =>
+    resolvePrincipal(credentials), // return the authenticated principal
+  admit: (submission, context) =>
+    admission.acceptRaw(
+      (context.principal as { readonly tenantId: TenantId }).tenantId,
+      submission
+    )
 })
 ```
 
 SMTP supports implicit TLS, STARTTLS, AUTH PLAIN, pooled connections, bounded
-lines/messages/recipients/connections, MIME, and DKIM.
+lines/messages/recipients/connections, MIME, and DKIM. `admit` receives the
+authenticated principal, authentication state, and TLS state. Excess connections
+receive a `421 Too many connections` response.
+
+This is a focused submission gateway, not a full MTA. It does not implement
+BDAT/CHUNKING, SMTPUTF8, MX lookup, remote-delivery scheduling, or bounce
+generation.
 
 ## Workflows
 
