@@ -113,5 +113,13 @@
     "prepack": "node scripts/build.mjs && node scripts/smoke.mjs",
     "check": "node scripts/build.mjs && tsc -p tsconfig.json --noEmit && vitest run",
     "pretest": "node scripts/build.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/doeixd/effect-email.git"
+  },
+  "homepage": "https://github.com/doeixd/effect-email#readme",
+  "bugs": {
+    "url": "https://github.com/doeixd/effect-email/issues"
   }
 }
