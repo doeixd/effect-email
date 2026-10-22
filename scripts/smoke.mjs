@@ -22,6 +22,7 @@ for (const name of required) {
   }
 }
 
+await import("../dist/TransportRegistry.js")
 await import("../dist/providers/Resend.js")
 await import("../dist/server/Gateway.js")
 await import("../dist/smtp/Protocol.js")

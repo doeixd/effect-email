@@ -31,7 +31,9 @@ Confirm the packed tarball contains:
 
 - `dist/` JavaScript and declaration files
 - `migrations/0001` through `0004`
-- `README.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE`
+- `README.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE`, `SECURITY.md`
+- `examples/` including the Mock quick start, provider layers, routes, and Alchemy
+- `docs/` including driver parity, runtime matrix, PostgreSQL, review, and improvement plans
 - `src/` for source maps
 
 ## Publish

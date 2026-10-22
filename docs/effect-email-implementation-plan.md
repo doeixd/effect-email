@@ -75,7 +75,7 @@ An application normally requires one `Email` service. A provider implementation 
 
 When using multiple providers, construct multiple values and compose them before providing the final service. Merging two layers with the same service key does not create a registry.
 
-Support explicit named routes such as `transactional` and `broadcast` through an immutable route table. Keep a dynamic route registry out of the MVP. If runtime changes become necessary, introduce a separately managed scoped registry later.
+Support explicit named routes such as `transactional` and `broadcast` through an immutable route table. `TransportRegistry` additionally supports layer-provided routes for multi-provider composition; registry state is resolved when the `Email` layer is constructed.
 
 ### 3.3 Construction and lifetime
 

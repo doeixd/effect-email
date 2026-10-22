@@ -70,7 +70,7 @@ Run it locally:
 bun examples/quick-start.ts
 ```
 
-More in [`examples/`](./examples), including a
+More in [`examples/`](./examples), including provider-layer and multi-route registry examples and a
 [Cloudflare Worker deployment with alchemy.run](./examples/alchemy).
 
 ## Deploy with alchemy.run
@@ -204,6 +204,31 @@ Policies compose without changing the transport contract. Retry never replays an
 uncertain submission. Fallback only moves rejected, safely retryable slots.
 Tee exposes explicit multi-receipt results. Rate limits and circuit breakers are
 configurable, with safe handling for oversized requests.
+
+## Multiple routes
+
+Static routes work directly. For layer-provided or dynamically assembled
+transports, use `TransportRegistry`:
+
+```ts
+import * as TransportRegistry from "@doeixd/effect-email/TransportRegistry"
+
+const registry = yield* TransportRegistry.make({
+  default: resendTransport,
+  transactional: postmarkTransport
+})
+
+const emailLayer = Email.layerFromRegistry({
+  defaultFrom: "billing@example.com",
+  defaultRoute: routeName("default"),
+  registry
+})
+```
+
+`Email.layer({ routes })` remains the static convenience path. For layer-provided
+routes, use `Email.layerFromRegistryLayer({ registry })`. `EmailTransport` is a
+single-provider service; do not provide multiple providers under the same tag.
+Use a route registry for multi-provider applications.
 
 ## Templates
 
@@ -406,6 +431,7 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 - [Release checklist](./docs/release.md)
 - [Review findings](./docs/review-findings.md)
 - [Review plan](./docs/review-plan.md)
+- [Transport/provider improvement plan](./docs/improvement-plan.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security policy](./SECURITY.md)
 

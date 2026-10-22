@@ -9,6 +9,7 @@
     "./Message": "./dist/Message.js",
     "./Email": "./dist/Email.js",
     "./EmailTransport": "./dist/EmailTransport.js",
+    "./TransportRegistry": "./dist/TransportRegistry.js",
     "./EmailError": "./dist/EmailError.js",
     "./DeliveryStore": "./dist/DeliveryStore.js",
     "./DeliveryStoreSql": "./dist/DeliveryStoreSql.js",
@@ -97,7 +98,10 @@
     "NOTICE",
     "examples",
     "CONTRIBUTING.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "docs/improvement-plan.md",
+    "docs/review-findings.md",
+    "docs/review-plan.md"
   ],
   "engines": {
     "node": ">=22"

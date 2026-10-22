@@ -1,6 +1,7 @@
 export * as Message from "./Message"
 export * as Email from "./Email"
 export * as EmailTransport from "./EmailTransport"
+export * as TransportRegistry from "./TransportRegistry"
 export * as EmailError from "./EmailError"
 export * as DeliveryStore from "./DeliveryStore"
 export * as Submissions from "./queue/Submissions"

@@ -1,6 +1,6 @@
 # Runtime matrix
 
-The root entrypoint (`@doeixd/effect-email`) exports core contracts, delivery storage,
+The root entrypoint (`@doeixd/effect-email`) exports core contracts, the transport registry, delivery storage,
 queue integration, templates, spool, gateway handlers, and the catcher. It does
 not import providers, Node server bindings, or SMTP adapters.
 
@@ -8,7 +8,7 @@ not import providers, Node server bindings, or SMTP adapters.
 
 | Capability | Node 22+ | Bun | Deno | Cloudflare Workers |
 | --- | --- | --- | --- | --- |
-| Core message/email/transport APIs | yes | yes | yes | yes |
+| Core message/email/transport/registry APIs | yes | yes | yes | yes |
 | HTTP providers | yes | yes | yes | yes |
 | `persistence/RateLimiter` | yes | yes | yes | yes |
 | `persistence/PersistedQueue` | yes | yes | yes | yes |

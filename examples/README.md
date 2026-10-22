@@ -7,6 +7,12 @@
   bun examples/quick-start.ts
   ```
 
+- `provider-layer.ts` builds a provider client layer and reuses its transport:
+  `bun examples/provider-layer.ts`.
+
+- `routes.ts` sends through two Mock transports using `TransportRegistry`:
+  `bun examples/routes.ts`.
+
 - `alchemy/` deploys a Cloudflare Worker with alchemy.run and a Cloudflare
   `send_email` binding. See [`alchemy/README.md`](./alchemy/README.md).
 

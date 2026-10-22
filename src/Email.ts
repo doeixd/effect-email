@@ -21,6 +21,8 @@ import { BatchExecutionError } from "./Submission"
 import type { Transport, NativeBatchTransport } from "./EmailTransport"
 import { isNativeBatchTransport } from "./EmailTransport"
 import type { RendererShape } from "./render/Template"
+import type { TransportRegistryShape } from "./TransportRegistry"
+import { TransportRegistry } from "./TransportRegistry"
 
 export interface SendOptions {
   readonly route?: RouteName
@@ -67,33 +69,58 @@ export class Email extends Context.Service<Email, EmailShape>()(
       Email,
       Effect.sync(() => {
         const from = normalizeMailbox(options.defaultFrom)
-        const routes = new Map<string, Transport>(Object.entries(options.routes))
+        const routes = new Map<string, Transport>(
+          Object.entries(options.routes)
+        )
         if (routes.size === 0) {
           throw new Error("Email.layer requires at least one route")
         }
-        const defaultRoute = resolveDefaultRoute(options, routes)
-        const send = makeSend(
-          from,
-          defaultRoute,
-          routes,
-          options.renderer
+        return Email.of(
+          makeEmailShape(
+            from,
+            routes,
+            resolveDefaultRoute(options.defaultRoute, routes),
+            options.renderer
+          )
         )
-        const sendBatch = makeSendBatch(
-          from,
-          defaultRoute,
-          routes,
-          options.renderer
-        )
-        const sendStream = makeSendStream(sendBatch)
-        return Email.of({
-          send,
-          sendBatch,
-          sendStream,
-          retrieve: makeRetrieve(routes),
-          cancel: makeCancel(routes)
-        })
       })
     )
+  }
+
+  static layerFromRegistry(options: {
+    readonly defaultFrom: MailboxInput
+    readonly registry: TransportRegistryShape
+    readonly defaultRoute?: RouteName
+    readonly renderer?: RendererShape
+  }): Layer.Layer<Email, UnsupportedCapability> {
+    return Layer.effect(
+      Email,
+      makeFromRegistry(
+        options.defaultFrom,
+        options.registry,
+        options.defaultRoute,
+        options.renderer
+      )
+    )
+  }
+
+  static layerFromRegistryLayer<R = never, E = never>(options: {
+    readonly defaultFrom: MailboxInput
+    readonly registry: Layer.Layer<TransportRegistry, E, R>
+    readonly defaultRoute?: RouteName
+    readonly renderer?: RendererShape
+  }): Layer.Layer<Email, E | UnsupportedCapability, R> {
+    return Layer.effect(
+      Email,
+      Effect.flatMap(TransportRegistry, (registry) =>
+        makeFromRegistry(
+          options.defaultFrom,
+          registry,
+          options.defaultRoute,
+          options.renderer
+        )
+      )
+    ).pipe(Layer.provide(options.registry))
   }
 
   static layerTransport(options: {
@@ -110,6 +137,62 @@ export class Email extends Context.Service<Email, EmailShape>()(
   }
 }
 
+const makeFromRegistry = (
+  defaultFrom: MailboxInput,
+  registry: TransportRegistryShape,
+  defaultRoute: RouteName | undefined,
+  renderer: RendererShape | undefined
+): Effect.Effect<EmailShape, UnsupportedCapability> =>
+  Effect.gen(function* () {
+    const from = normalizeMailbox(defaultFrom)
+    const names = yield* registry.routes
+    const entries = yield* Effect.forEach(
+      names,
+      (route) =>
+        Effect.map(registry.get(route), (transport) => [
+          route,
+          transport
+        ] as const)
+    )
+    const routes = new Map<string, Transport>(entries)
+    if (routes.size === 0) {
+      throw new Error(
+        "Email.layerFromRegistry requires at least one route"
+      )
+    }
+    const requested = defaultRoute ?? registry.defaultRoute
+    return Email.of(
+      makeEmailShape(
+        from,
+        routes,
+        resolveDefaultRoute(requested, routes),
+        renderer
+      )
+    )
+  })
+
+const makeEmailShape = (
+  from: NormalizedAddress,
+  routes: ReadonlyMap<string, Transport>,
+  defaultRoute: RouteName,
+  renderer: RendererShape | undefined
+): EmailShape => {
+  const send = makeSend(from, defaultRoute, routes, renderer)
+  const sendBatch = makeSendBatch(
+    from,
+    defaultRoute,
+    routes,
+    renderer
+  )
+  return {
+    send,
+    sendBatch,
+    sendStream: makeSendStream(sendBatch),
+    retrieve: makeRetrieve(routes),
+    cancel: makeCancel(routes)
+  }
+}
+
 export interface EmailOptions {
   readonly defaultFrom: MailboxInput
   readonly defaultRoute?: RouteName
@@ -118,14 +201,14 @@ export interface EmailOptions {
 }
 
 const resolveDefaultRoute = (
-  options: EmailOptions,
+  requested: RouteName | undefined,
   routes: ReadonlyMap<string, Transport>
 ): RouteName => {
-  if (options.defaultRoute !== undefined) {
-    if (!routes.has(options.defaultRoute)) {
-      throw new Error(`default route not found: ${options.defaultRoute}`)
+  if (requested !== undefined) {
+    if (!routes.has(requested)) {
+      throw new Error(`default route not found: ${requested}`)
     }
-    return options.defaultRoute
+    return requested
   }
   if (routes.has("default")) {
     return routeName("default")
@@ -588,6 +671,8 @@ const makeSendStream = (
   }
 
 export const layer = Email.layer
+export const layerFromRegistry = Email.layerFromRegistry
+export const layerFromRegistryLayer = Email.layerFromRegistryLayer
 export const layerTransport = Email.layerTransport
 
 export const send = (

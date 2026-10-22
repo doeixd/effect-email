@@ -59,10 +59,9 @@ mirroring are implemented.
 
 Upstream messages carry structured tags (`name`/`value`), metadata, templates,
 tracking, scheduling, sandbox, raw MIME, streams, cancellation, and retrieval.
-This port currently models string tags and rendered or provider-template
-sends. MailerSend exposes retrieval through its provider client, but generic
-retrieval is not part of the transport contract. Local template rendering,
-metadata, tracking, scheduling, sandbox fields, streams, cancellation, and
-generic retrieval remain unimplemented. Adapting those drivers fully requires
-extending `Message`, `SubmissionReceipt`, and `TransportCapabilities` first
-rather than silently dropping fields.
+This port models header-safe string tags, rendered and provider-template
+sends, local template rendering, raw MIME, and optional retrieval/cancellation.
+Structured tag objects, metadata, tracking, scheduling, sandbox fields, and
+provider-native streams remain unimplemented. Adapting those drivers fully
+requires extending `Message`, `SubmissionReceipt`, and `TransportCapabilities`
+first rather than silently dropping fields.
