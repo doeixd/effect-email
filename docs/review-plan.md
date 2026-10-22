@@ -122,12 +122,12 @@ Files:
 - `tsconfig.json`
 - `.gitignore`
 - `bun.lock`
-- `effect-email-implementation-plan.md`
+- `docs/effect-email-implementation-plan.md`
 - `README.md`
-- `effect-v4-api-scope.md`
-- `effect-schema.md`
-- `effect-ecosystem.md`
-- `effect-adjacent-projects.md`
+- `docs/effect-v4-api-scope.md`
+- `docs/effect-schema.md`
+- `docs/effect-ecosystem.md`
+- `docs/effect-adjacent-projects.md`
 - `docs/driver-parity.md`
 - `docs/runtime-matrix.md`
 - `docs/postgres.md`
@@ -498,7 +498,7 @@ Files:
 - `docs/driver-parity.md`
 - `docs/runtime-matrix.md`
 - `docs/postgres.md`
-- `effect-email-implementation-plan.md`
+- `docs/effect-email-implementation-plan.md`
 - Root Effect research notes
 
 Checks:
@@ -855,11 +855,11 @@ checklists, and recording evidence.
 - [x] `package.json`
 - [x] `tsconfig.json`
 - [x] `README.md`
-- [ ] `effect-email-implementation-plan.md`
-- [ ] `effect-v4-api-scope.md`
-- [ ] `effect-schema.md`
-- [ ] `effect-ecosystem.md`
-- [ ] `effect-adjacent-projects.md`
+- [ ] `docs/effect-email-implementation-plan.md`
+- [ ] `docs/effect-v4-api-scope.md`
+- [ ] `docs/effect-schema.md`
+- [ ] `docs/effect-ecosystem.md`
+- [ ] `docs/effect-adjacent-projects.md`
 
 ### Docs
 

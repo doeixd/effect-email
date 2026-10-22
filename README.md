@@ -4,10 +4,6 @@
 delivery, provider adapters, retry and fallback policies, SMTP, HTTP admission,
 workflows, and suppression, built on Effect v4.
 
-[![npm](https://img.shields.io/npm/v/@doeixd/effect-email)](https://www.npmjs.com/package/@doeixd/effect-email)
-[![license](https://img.shields.io/npm/l/@doeixd/effect-email)](LICENSE)
-[![Effect v4](https://img.shields.io/badge/Effect-v4-5A45FF)](https://effect.website)
-
 An independent Effect port of [unemail](https://github.com/productdevbook/unemail).
 See [`NOTICE`](./NOTICE) for upstream attribution.
 
@@ -403,7 +399,7 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 
 ## Documentation
 
-- [Implementation plan](./effect-email-implementation-plan.md)
+- [Implementation plan](https://github.com/doeixd/effect-email/blob/main/docs/effect-email-implementation-plan.md)
 - [Driver parity](./docs/driver-parity.md)
 - [Runtime matrix](./docs/runtime-matrix.md)
 - [PostgreSQL deployment](./docs/postgres.md)
