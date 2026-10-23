@@ -30,7 +30,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/effect_email bun run te
 Confirm the packed tarball contains:
 
 - `dist/` JavaScript and declaration files
-- `migrations/0001` through `0005`
+- `migrations/0001` through `0006`
 - `README.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE`, `SECURITY.md`
 - `examples/` including the Mock quick start, provider layers, routes, and Alchemy
 - `docs/` including driver parity, runtime matrix, PostgreSQL, review, and improvement plans

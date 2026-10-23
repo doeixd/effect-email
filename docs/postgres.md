@@ -4,15 +4,16 @@
 
 `DeliveryStoreSql.layerSql` requires an `effect/sql` `SqlClient`. It stores one
 JSON payload per delivery intent and one per provider event, with denormalized
-`tenant_id`, `status`, `updated_at`, `queued_at`, `event_type`, and
-`occurred_at` columns for indexed operational queries. Run
+`tenant_id`, `status`, `updated_at`, `queued_at`, `claim_expires_at`,
+`event_type`, and `occurred_at` columns for indexed operational queries. Run
 `migrations/0001_delivery_store.sql` before starting the service. Existing
 installations created before these columns were added should run
 `migrations/0002_delivery_store_columns.sql`, which backfills them from the
 stored JSON. Run `migrations/0004_cancellations.sql` for durable pre-admission
-cancellation tombstones and `migrations/0005_delivery_tenant.sql` for tenant
-storage/backfill. Attempt history is retained inside the intent JSON payload;
-receipt and attempt tables remain a future normalization step.
+cancellation tombstones, `migrations/0005_delivery_tenant.sql` for tenant
+storage/backfill, and `migrations/0006_delivery_query_indexes.sql` for bounded
+outbox and stale-claim queries. Attempt history is retained inside the intent
+JSON payload; receipt and attempt tables remain a future normalization step.
 
 ```ts
 import { PgClient } from "@effect/sql-pg"

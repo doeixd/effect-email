@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 274 tests across 58 files.
+- `bun run check`: pass, 277 tests across 58 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -41,7 +41,7 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 | Providers | Provider-specific `make`, layer, client, and transport constructors | 24 provider/infrastructure adapters plus local catchers and `Mock` | `src/providers/` |
 | Admission | `SubmissionAdmission.accept`, `acceptRaw`, `get`, `cancel`, `redrive` | Authorizes, optionally checks suppression, snapshots content, and persists an intent | `src/SubmissionAdmission.ts` |
 | Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, event, cancellation, and retention state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
-| Queue and recovery | `src/queue/Submissions.ts` | Persisted submission jobs, publisher, worker, stale reconciliation, redrive | `src/queue/Submissions.ts` |
+| Queue and recovery | `src/queue/Submissions.ts` | Persisted submission jobs, bounded publisher and stale-claim pages, worker, reconciliation, redrive | `src/queue/Submissions.ts` |
 | Workflows | `SubmitAfterDelay`, `WaitForDeliveryEvent` | Durable delay and event waiting on `WorkflowEngine` | `src/workflow/Submissions.ts` |
 | Gateway and SMTP | `Gateway`, `Catcher`, `Smtp` client/server | Authenticated submission paths with deny-by-default gateway/catcher authorization | `src/server/`, `src/smtp/` |
 | Suppression | `SuppressionStore` | Admission-time check when a suppression store is present | `src/Suppression.ts` |
@@ -112,6 +112,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   restores or snapshots through a memory store.
 - Concurrent identical intent creation returns one intent; different content
   returns `IdempotencyConflict`. SQL creation uses an atomic insert.
+- Publisher and reconciler process tenant/outbox and stale-claim queries in
+  bounded delivery-ID pages rather than scanning all intents.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -123,9 +125,9 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Tenant identity is stored but not required for lookup | `DeliveryIntent.tenantId`, `tenant_id` column | A caller can still address a delivery without tenant scoping |
 | Event wait uses the first stored event | `workflow/Submissions.ts` | An unrelated open/click event can satisfy the wait |
 | Suppression discovery is optional | `SubmissionAdmission` uses `serviceOption` | A production assembly can accidentally omit enforcement |
-| Background scans are unbounded | `listAll` and status scans | Publisher/reconciler work grows with total history |
+| Diagnostics still use unbounded scans | `listAll` in gateway/catcher paths | Operator diagnostics can grow with total history until PR 11 |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
-| Storage schema is intent-oriented | migrations `0001`-`0005` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
+| Storage schema is intent-oriented | migrations `0001`-`0006` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |
 | No production assembly example | `examples/` contains direct, provider, route, and deployment samples | Operators must infer worker, publisher, reconciler, and shutdown wiring |
 

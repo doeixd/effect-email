@@ -33,6 +33,9 @@
   timestamps, status, destination, receipt, and error details.
 - SQL intents store and index `tenant_id`; `0005_delivery_tenant.sql` backfills
   existing PostgreSQL rows from stored JSON.
+- Publisher and reconciler now use bounded delivery-ID pages for tenant outbox
+  and stale-claim queries. `0006_delivery_query_indexes.sql` adds supporting
+  indexes and the `claim_expires_at` column.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

@@ -14,7 +14,7 @@ Implementation status (2026-10-22):
   client instance; added sharing tests and a provider surface conformance test.
 - Phase 3 complete: README route-registry guidance and package exports updated.
 - Phase 4 deprecation/removal not started.
-- Phase 5 verification complete: typecheck, 274 tests, build, dist smoke, and
+- Phase 5 verification complete: typecheck, 277 tests, build, dist smoke, and
   package dry-run pass.
 - Follow-up fixes: ambiguous HTTP request failures are `DeliveryUncertain`,
   `withRetry` preserves native batches, and SQL transitions use transaction-local

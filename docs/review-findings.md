@@ -25,7 +25,7 @@ Current snapshot after review fixes:
 
 Follow-up snapshot (`c615c4e`):
 
-- `bun run check`: 274 passed across 58 files, including PostgreSQL 17
+- `bun run check`: 277 passed across 58 files, including PostgreSQL 17
   integration.
 - Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
 - Native batch dispatch survives `withRetry`.
@@ -39,6 +39,8 @@ Follow-up snapshot (`c615c4e`):
   creation and claim races are covered on SQLite and PostgreSQL.
 - Intents retain embedded attempt history, and SQL stores/indexes `tenant_id`
   with a PostgreSQL backfill migration.
+- Publisher and reconciler use bounded delivery-ID pages for tenant outbox and
+  stale-claim queries; supporting indexes are added by migration `0006`.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
@@ -1291,7 +1293,7 @@ Status: Fixed.
 ## Test audit
 
 - Full suite after final changes: 244 passed, 1 skipped.
-- Follow-up suite: 274 passed, including PostgreSQL 17 integration.
+- Follow-up suite: 277 passed, including PostgreSQL 17 integration.
 - CI workflow added at `.github/workflows/ci.yml` with a PostgreSQL 16 service.
 - Earlier flake run: three consecutive passes at 232/1 skipped.
 - No flaky failures observed.

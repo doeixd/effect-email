@@ -510,6 +510,76 @@ describe("Submission queue", () => {
       assert.strictEqual((yield* client.inbox.messages).length, 1)
     }))
 
+  it.effect("publishes unqueued intents in bounded pages", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const layers = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: client.transport }
+        })
+      )
+      const ids = [
+        deliveryId("dlv_page_1"),
+        deliveryId("dlv_page_2"),
+        deliveryId("dlv_page_3")
+      ]
+
+      const published = yield* Effect.gen(function* () {
+        const queue = yield* Submissions.make()
+        const store = yield* DeliveryStore.DeliveryStore
+        for (const id of ids) {
+          yield* store.createIntent({
+            ...intentInput,
+            deliveryId: id,
+            tenantId: tenant
+          })
+        }
+        return yield* Submissions.publishPending(queue, tenant, {
+          pageSize: 2
+        })
+      }).pipe(Effect.provide(layers))
+
+      assert.strictEqual(published.length, 3)
+    }))
+
+  it.effect("reconciles stale intents in bounded pages", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const layers = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: client.transport }
+        })
+      )
+      const ids = [
+        deliveryId("dlv_stale_page_1"),
+        deliveryId("dlv_stale_page_2")
+      ]
+
+      const reconciled = yield* Effect.gen(function* () {
+        const store = yield* DeliveryStore.DeliveryStore
+        for (const id of ids) {
+          yield* store.createIntent({
+            ...intentInput,
+            deliveryId: id,
+            tenantId: tenant
+          })
+          yield* store.beginAttempt(id, 1)
+        }
+        yield* TestClock.adjust(60_000)
+        return yield* Submissions.reconcileStale({
+          staleAfterMillis: 30_000,
+          pageSize: 1
+        })
+      }).pipe(Effect.provide(layers))
+
+      assert.deepStrictEqual(reconciled, ids)
+    }))
   it.effect("publishes only the requested tenant's intents", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

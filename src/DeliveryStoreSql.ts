@@ -89,7 +89,7 @@ export const layerSql = (
 
       yield* sql`CREATE TABLE IF NOT EXISTS ${sql(
         intents
-      )} (delivery_id TEXT PRIMARY KEY, tenant_id TEXT, status TEXT NOT NULL, updated_at TEXT NOT NULL, queued_at TEXT, data TEXT NOT NULL)`
+      )} (delivery_id TEXT PRIMARY KEY, tenant_id TEXT, status TEXT NOT NULL, updated_at TEXT NOT NULL, queued_at TEXT, claim_expires_at TEXT, data TEXT NOT NULL)`
       yield* sql`CREATE TABLE IF NOT EXISTS ${sql(
         events
       )} (event_id TEXT PRIMARY KEY, delivery_id TEXT, event_type TEXT NOT NULL, occurred_at TEXT NOT NULL, data TEXT NOT NULL)`
@@ -105,6 +105,12 @@ export const layerSql = (
       yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
         `${intents}_tenant`
       )} ON ${sql(intents)} (tenant_id, delivery_id)`
+      yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
+        `${intents}_outbox`
+      )} ON ${sql(intents)} (status, queued_at, tenant_id, delivery_id)`
+      yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
+        `${intents}_claim`
+      )} ON ${sql(intents)} (status, claim_expires_at)`
       yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
         `${events}_delivery`
       )} ON ${sql(events)} (delivery_id)`
@@ -149,7 +155,7 @@ export const layerSql = (
       const saveIntent = (intent: DeliveryIntent) =>
         sql`INSERT INTO ${sql(
           intents
-        )} (delivery_id, tenant_id, status, updated_at, queued_at, data) VALUES (${
+        )} (delivery_id, tenant_id, status, updated_at, queued_at, claim_expires_at, data) VALUES (${
           intent.deliveryId
         }, ${intent.tenantId ?? null}, ${intent.status}, ${DateTime.formatIso(
           intent.updatedAt
@@ -157,14 +163,18 @@ export const layerSql = (
           intent.queuedAt === undefined
             ? null
             : DateTime.formatIso(intent.queuedAt)
+        }, ${
+          intent.claimExpiresAt === undefined
+            ? null
+            : DateTime.formatIso(intent.claimExpiresAt)
         }, ${JSON.stringify(
           encode(intent)
-        )}) ON CONFLICT(delivery_id) DO UPDATE SET tenant_id = excluded.tenant_id, status = excluded.status, updated_at = excluded.updated_at, queued_at = excluded.queued_at, data = excluded.data`
+        )}) ON CONFLICT(delivery_id) DO UPDATE SET tenant_id = excluded.tenant_id, status = excluded.status, updated_at = excluded.updated_at, queued_at = excluded.queued_at, claim_expires_at = excluded.claim_expires_at, data = excluded.data`
 
       const insertIntent = (intent: DeliveryIntent) =>
         sql<{ readonly data: string }>`INSERT INTO ${sql(
           intents
-        )} (delivery_id, tenant_id, status, updated_at, queued_at, data) VALUES (${
+        )} (delivery_id, tenant_id, status, updated_at, queued_at, claim_expires_at, data) VALUES (${
           intent.deliveryId
         }, ${intent.tenantId ?? null}, ${intent.status}, ${DateTime.formatIso(
           intent.updatedAt
@@ -172,6 +182,10 @@ export const layerSql = (
           intent.queuedAt === undefined
             ? null
             : DateTime.formatIso(intent.queuedAt)
+        }, ${
+          intent.claimExpiresAt === undefined
+            ? null
+            : DateTime.formatIso(intent.claimExpiresAt)
         }, ${JSON.stringify(
           encode(intent)
         )}) ON CONFLICT(delivery_id) DO NOTHING RETURNING data`
@@ -468,6 +482,42 @@ export const layerSql = (
             ),
             Effect.mapError(normalizeError)
           ),
+        listUnqueuedForTenant: (options) => {
+          const after =
+            options.after === undefined
+              ? sql``
+              : sql`AND delivery_id > ${options.after}`
+          return sql<{ readonly data: string }>`SELECT data FROM ${sql(
+            intents
+          )} WHERE status = ${"pending"} AND queued_at IS NULL AND tenant_id = ${options.tenantId} ${after} ORDER BY delivery_id LIMIT ${options.limit}`.pipe(
+            Effect.map((rows) =>
+              rows.map(
+                (row) => decode(JSON.parse(row.data)) as DeliveryIntent
+              )
+            ),
+            Effect.mapError(normalizeError)
+          )
+        },
+        listStaleInProgress: (options) => {
+          const after =
+            options.after === undefined
+              ? sql``
+              : sql`AND delivery_id > ${options.after}`
+          return sql<{ readonly data: string }>`SELECT data FROM ${sql(
+            intents
+          )} WHERE status = ${"in-progress"} AND ((claim_expires_at IS NOT NULL AND claim_expires_at <= ${DateTime.formatIso(
+            options.now
+          )}) OR (claim_expires_at IS NULL AND updated_at < ${DateTime.formatIso(
+            options.updatedBefore
+          )})) ${after} ORDER BY delivery_id LIMIT ${options.limit}`.pipe(
+            Effect.map((rows) =>
+              rows.map(
+                (row) => decode(JSON.parse(row.data)) as DeliveryIntent
+              )
+            ),
+            Effect.mapError(normalizeError)
+          )
+        },
         appendProviderEvent: (event) =>
           sql
             .withTransaction(

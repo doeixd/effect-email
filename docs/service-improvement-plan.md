@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `c615c4e` (PR 5 partial)
-Status: PR 1-4 complete; PR 5 partial
+Current baseline: `c615c4e` plus PR 6
+Status: PR 1-4 and PR 6 complete; PR 5 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -17,7 +17,8 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 3 | Complete | Native batch retry preserves indexes and accepted/uncertain slots; opt-in subset retry, fallback capability validation, composite limits, and policy-order docs added |
 | 4 | Complete | Pure lifecycle transitions are shared by memory and SQL; SQL transitions no longer use memory restore/snapshot; parity coverage added |
 | 5 | Partial | Atomic claims, atomic SQL creation, tenant storage/indexing, and embedded attempt history are implemented; composite tenant keys and normalized attempt storage remain |
-| 6-12 | Not started | See the PR sequence |
+| 6 | Complete | Publisher and reconciler use bounded tenant/outbox and stale-claim pages with supporting indexes |
+| 7-12 | Not started | See the PR sequence |
 
 ## 1. Objective
 
@@ -51,6 +52,7 @@ already addressed:
 | SQL transitions executed through a memory service | Memory and SQL now apply the same pure transitions from `src/DeliveryTransitions.ts` |
 | Attempts had no exclusive claim | `beginAttempt` acquires `claimId`/`claimExpiresAt`; results from stale claims are rejected |
 | SQL intent creation could overwrite a concurrent insert | SQL uses atomic insert-on-conflict and returns the existing intent or `IdempotencyConflict` |
+| Background work scanned every intent | Publisher/reconciler use tenant and stale-claim pages ordered by delivery ID, with outbox/claim indexes |
 
 Still current:
 
@@ -60,7 +62,6 @@ Still current:
   future work.
 - Event waits return the first stored event.
 - Suppression service discovery is optional.
-- Background work uses unbounded scans.
 - Registry routes are captured at layer construction.
 - There is no complete production assembly example.
 
@@ -433,7 +434,7 @@ Priority: P1 quality foundation; P2 extended coverage.
 
 PRs 2-4 are complete. PR 5 is partially complete: atomic claims, atomic
 creation, tenant storage/indexing, and embedded attempt history are done;
-composite tenant keys and normalized attempt storage remain.
+composite tenant keys and normalized attempt storage remain. PR 6 bounded query work is complete.
 
 ## 15. Compatibility and migration
 

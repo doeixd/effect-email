@@ -232,6 +232,17 @@ export interface DeliveryStoreShape {
   readonly listAttempts: (
     deliveryId: DeliveryId
   ) => Effect.Effect<ReadonlyArray<DeliveryAttempt>, StoreUnavailable>
+  readonly listUnqueuedForTenant: (options: {
+    readonly tenantId: TenantId
+    readonly limit: number
+    readonly after?: DeliveryId
+  }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
+  readonly listStaleInProgress: (options: {
+    readonly now: DateTime.Utc
+    readonly updatedBefore: DateTime.Utc
+    readonly limit: number
+    readonly after?: DeliveryId
+  }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
   readonly appendProviderEvent: (
     event: DeliveryEvent
   ) => Effect.Effect<boolean, StoreUnavailable>
@@ -656,6 +667,49 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           Ref.get(state),
           (intents) =>
             intents.get(deliveryId)?.attemptHistory ?? []
+        ),
+      listUnqueuedForTenant: (options) =>
+        Effect.map(Ref.get(state), (intents) =>
+          [...intents.values()]
+            .filter(
+              (intent) =>
+                intent.tenantId === options.tenantId &&
+                intent.status === "pending" &&
+                intent.queuedAt === undefined &&
+                (options.after === undefined ||
+                  intent.deliveryId > options.after)
+            )
+            .sort((left, right) =>
+              left.deliveryId.localeCompare(right.deliveryId)
+            )
+            .slice(0, options.limit)
+        ),
+      listStaleInProgress: (options) =>
+        Effect.map(Ref.get(state), (intents) =>
+          [...intents.values()]
+            .filter((intent) => {
+              if (
+                intent.status !== "in-progress" ||
+                (options.after !== undefined &&
+                  intent.deliveryId <= options.after)
+              ) {
+                return false
+              }
+              if (intent.claimExpiresAt !== undefined) {
+                return (
+                  DateTime.toEpochMillis(intent.claimExpiresAt) <=
+                  DateTime.toEpochMillis(options.now)
+                )
+              }
+              return (
+                DateTime.toEpochMillis(intent.updatedAt) <
+                DateTime.toEpochMillis(options.updatedBefore)
+              )
+            })
+            .sort((left, right) =>
+              left.deliveryId.localeCompare(right.deliveryId)
+            )
+            .slice(0, options.limit)
         ),
       appendProviderEvent,
       listEvents,

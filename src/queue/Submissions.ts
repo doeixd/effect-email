@@ -177,7 +177,8 @@ export const submit = (
 
 export const publishPending = (
   queue: PersistedQueue.PersistedQueue<SubmissionJob>,
-  tenantId: TenantId
+  tenantId: TenantId,
+  options: { readonly pageSize?: number } = {}
 ): Effect.Effect<
   ReadonlyArray<string>,
   EmailError | PersistedQueue.PersistedQueueError | Schema.SchemaError,
@@ -185,22 +186,32 @@ export const publishPending = (
 > =>
   Effect.gen(function* () {
     const store = yield* DeliveryStore
-    const pending = (yield* store.listUnqueued).filter(
-      (intent) => intent.tenantId === tenantId
-    )
+    const pageSize = Math.max(1, options.pageSize ?? 100)
     const ids: Array<string> = []
-    for (const intent of pending) {
-      const id = yield* offer(queue, {
-        version: 1,
+    let after: DeliveryId | undefined
+    while (true) {
+      const pending = yield* store.listUnqueuedForTenant({
         tenantId,
-        deliveryId: intent.deliveryId,
-        dispatchGeneration: intent.dispatchGeneration
+        limit: pageSize,
+        ...(after === undefined ? {} : { after })
       })
-      yield* store.markQueued(
-        intent.deliveryId,
-        intent.dispatchGeneration
-      )
-      ids.push(id)
+      for (const intent of pending) {
+        const id = yield* offer(queue, {
+          version: 1,
+          tenantId,
+          deliveryId: intent.deliveryId,
+          dispatchGeneration: intent.dispatchGeneration
+        })
+        yield* store.markQueued(
+          intent.deliveryId,
+          intent.dispatchGeneration
+        )
+        ids.push(id)
+      }
+      if (pending.length < pageSize) {
+        break
+      }
+      after = pending[pending.length - 1]!.deliveryId
     }
     return ids
   })
@@ -209,10 +220,15 @@ export const runPublisher = (options: {
   readonly queue: PersistedQueue.PersistedQueue<SubmissionJob>
   readonly tenantId: TenantId
   readonly intervalMillis?: number
+  readonly pageSize?: number
 }): Effect.Effect<never, never, DeliveryStore> =>
   Effect.forever(
     Effect.gen(function* () {
-      yield* publishPending(options.queue, options.tenantId).pipe(
+      yield* publishPending(options.queue, options.tenantId, {
+        ...(options.pageSize === undefined
+          ? {}
+          : { pageSize: options.pageSize })
+      }).pipe(
         Effect.tapError(() =>
           Effect.logWarning("submission outbox publish failed")
         ),
@@ -382,6 +398,7 @@ export const reconcileStale = (
   options: {
     readonly staleAfterMillis?: number
     readonly now?: DateTime.Utc
+    readonly pageSize?: number
   } = {}
 ): Effect.Effect<
   ReadonlyArray<DeliveryId>,
@@ -394,41 +411,44 @@ export const reconcileStale = (
     const cutoff =
       DateTime.toEpochMillis(now) -
       (options.staleAfterMillis ?? 5 * 60 * 1000)
-    const stale = (yield* store.listAll).filter((intent) => {
-      if (intent.status !== "in-progress") {
-        return false
-      }
-      if (intent.claimExpiresAt !== undefined) {
-        return (
-          DateTime.toEpochMillis(intent.claimExpiresAt) <=
-          DateTime.toEpochMillis(now)
-        )
-      }
-      return DateTime.toEpochMillis(intent.updatedAt) < cutoff
-    })
+    const updatedBefore = DateTime.makeUnsafe(new Date(cutoff))
+    const pageSize = Math.max(1, options.pageSize ?? 100)
     const reconciled: Array<DeliveryId> = []
-    for (const intent of stale) {
-      const events = yield* store.listEvents(intent.deliveryId)
-      if (events.length > 0) {
-        continue
+    let after: DeliveryId | undefined
+    while (true) {
+      const stale = yield* store.listStaleInProgress({
+        now,
+        updatedBefore,
+        limit: pageSize,
+        ...(after === undefined ? {} : { after })
+      })
+      for (const intent of stale) {
+        const events = yield* store.listEvents(intent.deliveryId)
+        if (events.length > 0) {
+          continue
+        }
+        yield* store.recordUncertain(
+          intent.deliveryId,
+          intent.dispatchGeneration,
+          new DeliveryUncertain({
+            message:
+              "submission remained in-progress past the reconciliation cutoff",
+            provider: "submission-worker"
+          })
+        )
+        reconciled.push(intent.deliveryId)
       }
-      yield* store.recordUncertain(
-        intent.deliveryId,
-        intent.dispatchGeneration,
-        new DeliveryUncertain({
-          message:
-            "submission remained in-progress past the reconciliation cutoff",
-          provider: "submission-worker"
-        })
-      )
-      reconciled.push(intent.deliveryId)
+      if (stale.length < pageSize) {
+        break
+      }
+      after = stale[stale.length - 1]!.deliveryId
     }
     return reconciled
   })
-
 export const runReconciler = (options: {
   readonly staleAfterMillis?: number
   readonly intervalMillis?: number
+  readonly pageSize?: number
 } = {}): Effect.Effect<never, never, DeliveryStore> =>
   Effect.forever(
     Effect.gen(function* () {

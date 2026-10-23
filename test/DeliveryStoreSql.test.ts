@@ -3,7 +3,12 @@ import { DateTime, Effect, Layer, Option } from "effect"
 import { SqliteClient } from "@effect/sql-sqlite-node"
 import { DeliveryStore, layerMemory } from "../src/DeliveryStore"
 import * as DeliveryStoreSql from "../src/DeliveryStoreSql"
-import { deliveryId, destinationId, makeDestination } from "../src/Ids"
+import {
+  deliveryId,
+  destinationId,
+  makeDestination,
+  tenantId
+} from "../src/Ids"
 import { TransportUnavailable } from "../src/EmailError"
 import { makeReceipt } from "../src/Submission"
 
@@ -87,6 +92,47 @@ describe("DeliveryStore SQL", () => {
       assert.strictEqual((yield* store.listEvents(target)).length, 0)
     }).pipe(Effect.provide(layer)))
 
+  it.effect("paginates unqueued and stale intents", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore
+      const tenant = tenantId("tenant_page")
+      const ids = [
+        deliveryId("dlv_sql_page_1"),
+        deliveryId("dlv_sql_page_2")
+      ]
+      for (const id of ids) {
+        yield* store.createIntent({
+          ...input,
+          deliveryId: id,
+          tenantId: tenant
+        })
+      }
+
+      const firstPage = yield* store.listUnqueuedForTenant({
+        tenantId: tenant,
+        limit: 1
+      })
+      const secondPage = yield* store.listUnqueuedForTenant({
+        tenantId: tenant,
+        limit: 1,
+        after: firstPage[0]!.deliveryId
+      })
+      yield* store.beginAttempt(ids[0]!, 1)
+      const stale = yield* store.listStaleInProgress({
+        now: DateTime.makeUnsafe(new Date(Date.now() + 60_000)),
+        updatedBefore: DateTime.makeUnsafe(new Date(Date.now() + 60_000)),
+        limit: 10
+      })
+
+      assert.deepStrictEqual(
+        [firstPage[0]?.deliveryId, secondPage[0]?.deliveryId],
+        ids
+      )
+      assert.deepStrictEqual(
+        stale.map((intent) => intent.deliveryId),
+        [ids[0]]
+      )
+    }).pipe(Effect.provide(layer)))
   it.effect("atomically creates intents and claims attempts", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore
