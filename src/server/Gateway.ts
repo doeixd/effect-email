@@ -66,16 +66,21 @@ const errorStatus = (error: EmailError): number => {
   }
 }
 
-const errorResponse = (error: EmailError): HttpServerResponse.HttpServerResponse =>
-  HttpServerResponse.jsonUnsafe(
+const errorResponse = (error: EmailError): HttpServerResponse.HttpServerResponse => {
+  const status = errorStatus(error)
+  return HttpServerResponse.jsonUnsafe(
     {
       error: {
         tag: error._tag,
-        message: error.message
+        message:
+          status >= 500
+            ? "internal delivery service error"
+            : error.message
       }
     },
-    { status: errorStatus(error) }
+    { status }
   )
+}
 
 const parsePath = (url: string): ReadonlyArray<string> => {
   const parsed = new URL(url, "http://localhost")
