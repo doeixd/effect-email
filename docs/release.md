@@ -58,6 +58,7 @@ is `public`.
 - The package name is scoped because the unscoped `effect-email` name is already
   used on npm.
 - Provider webhook signature helpers and concurrent-worker load tests remain
-  post-release hardening work.
+  post-release hardening work. Concurrent PostgreSQL transaction isolation is
+  covered by `test/Postgres.integration.test.ts`.
 - The default gateway and catcher deny access unless authorization hooks are
   supplied.

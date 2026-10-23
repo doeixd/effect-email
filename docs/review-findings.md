@@ -20,7 +20,18 @@ Current snapshot after review fixes:
 - `bun run test`: 244 passed, 1 skipped, 53 test files passed, 54 discovered.
 - Benchmark after warmup: 20,000 accepted in 1,349 ms (14,821/s).
 - Thirty-one regression tests were added across forty-six focused fixes.
-- Open Critical/High blockers remain; see the release recommendation.
+- No open Critical/High blockers remain; residual release constraints are listed
+  below.
+
+Follow-up snapshot (`4bf13f9`):
+
+- `bun run check`: 258 passed across 57 files, including PostgreSQL 17
+  integration.
+- Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
+- Native batch dispatch survives `withRetry`.
+- SQL delivery transitions use transaction-local state; concurrent delivery
+  isolation is tested.
+- The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
 
 ## Progress
 
@@ -282,8 +293,8 @@ Fix:
 - SQLite keeps its existing statement because transactions serialize writers.
 - PostgreSQL integration still passes with the locking query.
 
-Status: Fixed and verified on PostgreSQL 16. A dedicated concurrent-worker test
-is still recommended.
+Status: Fixed and verified on PostgreSQL 17. A concurrent delivery isolation test
+was added; multi-worker load testing is still recommended.
 
 ### RF-17: Queue IDs could collide across tenant/delivery boundaries
 
@@ -1270,16 +1281,17 @@ Status: Fixed.
 ## Test audit
 
 - Full suite after final changes: 244 passed, 1 skipped.
+- Follow-up suite: 258 passed, including PostgreSQL 17 integration.
 - CI workflow added at `.github/workflows/ci.yml` with a PostgreSQL 16 service.
 - Earlier flake run: three consecutive passes at 232/1 skipped.
 - No flaky failures observed.
 - PostgreSQL integration remains gated by `DATABASE_URL`; it passed separately
-  against PostgreSQL 16 during this review.
+  against PostgreSQL 16 during this review and PostgreSQL 17 in the follow-up.
 - Provider tests are deterministic and use local HTTP/SMTP doubles.
 - Remaining test gaps: provider webhook signatures, live-provider sandbox tests,
-  concurrent PostgreSQL workers, SMTP connection exhaustion, SMTP protocol
-  fuzzing, slow-client tests, common SMTP client integration, and long-header
-  MIME/DKIM interoperability.
+  multi-worker load tests, SMTP connection exhaustion, SMTP protocol fuzzing,
+  slow-client tests, common SMTP client integration, and long-header MIME/DKIM
+  interoperability.
 ## Release recommendation
 
 Status: **no open Critical or High findings.**

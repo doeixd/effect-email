@@ -2,6 +2,11 @@
 
 Status: Phases 1-3 and 5 implemented; Phase 4 deprecation deferred
 
+This document records the composition work. The overall service and feature
+roadmap is now `docs/service-improvement-plan.md`, with the current API inventory
+in `docs/baseline-inventory.md` and the lifecycle decision in
+`docs/adr/0001-delivery-lifecycle.md`.
+
 Implementation status (2026-10-22):
 
 - Phase 1 complete: `TransportRegistry`, `Email.layerFromRegistry`, tests.
@@ -9,8 +14,11 @@ Implementation status (2026-10-22):
   client instance; added sharing tests and a provider surface conformance test.
 - Phase 3 complete: README route-registry guidance and package exports updated.
 - Phase 4 deprecation/removal not started.
-- Phase 5 verification complete: typecheck, 253 tests, build, dist smoke, and
+- Phase 5 verification complete: typecheck, 258 tests, build, dist smoke, and
   package dry-run pass.
+- Follow-up fixes: ambiguous HTTP request failures are `DeliveryUncertain`,
+  `withRetry` preserves native batches, and SQL transitions use transaction-local
+  state.
 
 Scope: the `Transport`, `EmailTransport`, provider client, layer, and route
 composition model. Provider feature parity and delivery semantics are out of
@@ -18,6 +26,9 @@ scope unless they affect composition.
 
 Related documents:
 
+- `docs/service-improvement-plan.md`
+- `docs/baseline-inventory.md`
+- `docs/adr/0001-delivery-lifecycle.md`
 - `docs/review-findings.md`
 - `docs/review-plan.md`
 - `docs/runtime-matrix.md`
