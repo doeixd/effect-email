@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `051a3f6` (PR 11 partial)
-Status: PR 1-4 and 6-8 complete; PR 5, 9, 10, and 11 partial
+Current baseline: `051a3f6` plus PR 12
+Status: PR 1-4 and 6-8 complete; PR 5, 9, 10, 11, and 12 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -23,7 +23,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 9 | Partial | Typed event waits, dispatch-time suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; automatic hard-bounce suppression and wait deadlines remain |
 | 10 | Partial | PostgreSQL service example, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; typed configuration errors and the optional runtime helper remain |
 | 11 | Partial | Tenant/status paging, redrive audit, retention safety, and operations docs are implemented; legacy diagnostic scans, first-class metrics, and provider-lookup reconciliation remain |
-| 12 | Not started | See the PR sequence |
+| 12 | Partial | Provider evidence matrix, SMTP slow-client/invalid-command coverage, dependency strategy, and release guidance added; live sandbox tests and automated tarball smoke remain |
 
 ## 1. Objective
 
@@ -66,6 +66,7 @@ already addressed:
 | Cancellation and redrive lacked truthful outcomes | Cancellation returns explicit outcomes; uncertain redrive requires duplicate-risk acknowledgment |
 | Durable adoption required inferring assembly | Added `examples/postgres-service.ts`, production assembly guide, glossary, and adoption-level README |
 | Operator queries and redrive lacked bounded, attributable access | Added tenant/status paging and redrive actor/reason history; pruning retains non-terminal work |
+| Provider support and release evidence were implicit | Added provider evidence matrix, SMTP slow-client/fuzz coverage, dependency strategy, and release guidance |
 
 Still current:
 
@@ -82,6 +83,7 @@ Still current:
 - Some startup configuration failures are still defects rather than typed errors.
 - Legacy diagnostics still use unbounded scans; first-class metrics and
   provider-lookup reconciliation remain.
+- No live provider sandbox suite or automated tarball import smoke is enabled.
 
 ## 3. Target ownership
 

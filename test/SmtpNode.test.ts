@@ -68,6 +68,58 @@ const exchange = (
     })
   })
 
+const slowExchange = (port: number): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port })
+    let received = ""
+    const timeout = setTimeout(() => {
+      socket.destroy()
+      reject(new Error(`timed out: ${received}`))
+    }, 5_000)
+    socket.setEncoding("utf8")
+    socket.on("data", (chunk) => {
+      received += chunk
+      if (received.includes("220 ")) {
+        socket.write("EHLO slow")
+        setTimeout(() => socket.write("\r\n"), 50)
+      }
+      if (received.includes("250 ")) {
+        clearTimeout(timeout)
+        socket.end("QUIT\r\n")
+        resolve(received)
+      }
+    })
+    socket.on("error", (cause) => {
+      clearTimeout(timeout)
+      reject(cause)
+    })
+  })
+
+const fuzzExchange = (port: number): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const socket = createConnection({ host: "127.0.0.1", port })
+    let received = ""
+    const timeout = setTimeout(() => {
+      socket.destroy()
+      reject(new Error(`timed out: ${received}`))
+    }, 5_000)
+    socket.setEncoding("utf8")
+    socket.on("data", (chunk) => {
+      received += chunk
+      if (received.includes("220 ")) {
+        socket.write("GARBAGE\r\nNOOP\r\n")
+      }
+      if (received.includes("250 ")) {
+        clearTimeout(timeout)
+        socket.end("QUIT\r\n")
+        resolve(received)
+      }
+    })
+    socket.on("error", (cause) => {
+      clearTimeout(timeout)
+      reject(cause)
+    })
+  })
 describe("Node SMTP server", () => {
   it.live("accepts a pipelined message over TCP", () =>
     Effect.gen(function* () {
@@ -101,6 +153,37 @@ describe("Node SMTP server", () => {
       yield* Fiber.interrupt(fiber)
     }).pipe(Effect.scoped))
 
+  it.live("handles a slow client without dropping the command", () =>
+    Effect.gen(function* () {
+      const server = yield* NodeSmtp.start({
+        host: "127.0.0.1",
+        port: 0,
+        admit: () => Effect.void
+      })
+      const fiber = yield* server.run.pipe(Effect.forkScoped)
+      const port = "port" in server.address ? server.address.port : 0
+      const received = yield* Effect.promise(() => slowExchange(port))
+
+      assert.include(received, "220 ")
+      assert.include(received, "250 ")
+      yield* Fiber.interrupt(fiber)
+    }).pipe(Effect.scoped))
+
+  it.live("rejects unknown commands and continues the session", () =>
+    Effect.gen(function* () {
+      const server = yield* NodeSmtp.start({
+        host: "127.0.0.1",
+        port: 0,
+        admit: () => Effect.void
+      })
+      const fiber = yield* server.run.pipe(Effect.forkScoped)
+      const port = "port" in server.address ? server.address.port : 0
+      const received = yield* Effect.promise(() => fuzzExchange(port))
+
+      assert.include(received, "500 ")
+      assert.include(received, "250 ")
+      yield* Fiber.interrupt(fiber)
+    }).pipe(Effect.scoped))
   it.live("rejects excess connections with 421", () =>
     Effect.gen(function* () {
       const server = yield* NodeSmtp.start({

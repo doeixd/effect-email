@@ -57,6 +57,8 @@ is `public`.
 
 - The package name is scoped because the unscoped `effect-email` name is already
   used on npm.
+- Provider support is labeled by evidence in `docs/provider-support.md`; no live
+  sandbox suite is enabled by default.
 - Provider webhook signature helpers and concurrent-worker load tests remain
   post-release hardening work. Concurrent PostgreSQL transaction isolation is
   covered by `test/Postgres.integration.test.ts`.

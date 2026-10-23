@@ -451,9 +451,11 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 
 - [Implementation plan](https://github.com/doeixd/effect-email/blob/main/docs/effect-email-implementation-plan.md)
 - [Driver parity](./docs/driver-parity.md)
+- [Provider support matrix](./docs/provider-support.md)
 - [Runtime matrix](./docs/runtime-matrix.md)
 - [PostgreSQL deployment](./docs/postgres.md)
 - [Release checklist](./docs/release.md)
+- [Effect dependency strategy](./docs/dependency-strategy.md)
 - [Review findings](./docs/review-findings.md)
 - [Review plan](./docs/review-plan.md)
 - [Routing diagnostics](./docs/routing.md)

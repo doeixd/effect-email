@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 290 tests across 59 files.
+- `bun run check`: pass, 292 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -44,7 +44,7 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 | Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, correlated event, cancellation, retention, tenant-scoped paging, and redrive audit state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
 | Queue and recovery | `src/queue/Submissions.ts` | Persisted submission jobs, bounded publisher and stale-claim pages, worker, reconciliation, redrive | `src/queue/Submissions.ts` |
 | Workflows | `SubmitAfterDelay`, `WaitForDeliveryEvent` | Durable delay and typed event matching on `WorkflowEngine`; waits re-check stored events before blocking | `src/workflow/Submissions.ts` |
-| Gateway and SMTP | `Gateway`, `Catcher`, `Smtp` client/server | Authenticated submission paths with deny-by-default gateway/catcher authorization | `src/server/`, `src/smtp/` |
+| Gateway and SMTP | `Gateway`, `Catcher`, `Smtp` client/server | Authenticated submission paths with deny-by-default authorization; slow-client and invalid-command coverage | `src/server/`, `src/smtp/` |
 | Suppression | `SuppressionStore` | Admission-time check when a suppression store is present | `src/Suppression.ts` |
 | Retention | `DeliveryStore.prune` | Prunes intents/events by time; does not yet model content/attempt/event retention separately | `src/DeliveryStore.ts` |
 
@@ -130,6 +130,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   publisher, reconciler, scoped shutdown, and status lookup.
 - Operator queries can page by tenant and status; redrive records actor/reason;
   pruning retains non-terminal work.
+- Provider support is labeled by evidence in `docs/provider-support.md`; SMTP
+  covers slow clients and invalid-command recovery.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -144,6 +146,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Hard-bounce/complaint auto-suppression is not automatic | Verified events are stored and projected | Operators must apply suppression policy explicitly |
 | Legacy diagnostics still use unbounded scans | Gateway/catcher `listAll` paths | New tenant-scoped paging exists, but the legacy endpoints are not migrated |
 | Metrics and provider-lookup reconciliation are limited | Effect spans/annotations only | No first-class metric set or automatic provider retrieval reconciliation |
+| No live provider sandbox suite or automated tarball smoke | Contract tests use local fixtures | Sandbox parity and installed-package imports remain release hardening |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |

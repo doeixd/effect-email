@@ -58,6 +58,9 @@
   a delivery glossary.
 - Added tenant/status paged operator queries and redrive actor/reason history.
 - Documented retention boundaries and verified pruning keeps non-terminal work.
+- Added a provider evidence matrix, Effect dependency strategy, and release
+  qualification guidance.
+- Added SMTP slow-client and invalid-command recovery coverage.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.
