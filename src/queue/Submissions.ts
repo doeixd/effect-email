@@ -566,13 +566,11 @@ export interface UncertainLookup {
 export const reconcileUncertain = (
   options: UncertainLookup & {
     readonly pageSize?: number
-    readonly now?: DateTime.Utc
   }
 ): Effect.Effect<ReadonlyArray<DeliveryId>, StoreUnavailable, DeliveryStore> =>
   Effect.gen(function* () {
     const store = yield* DeliveryStore
     const pageSize = Math.max(1, options.pageSize ?? 100)
-    const now = options.now ?? (yield* DateTime.now)
     const reconciled: Array<DeliveryId> = []
     let after: DeliveryId | undefined
     while (true) {
@@ -595,8 +593,13 @@ export const reconcileUncertain = (
           continue
         }
         if (Option.isSome(result.success)) {
-          yield* store.appendProviderEvent(result.success.value)
-          reconciled.push(intent.deliveryId)
+          const inserted = yield* store.appendProviderEvent({
+            ...result.success.value,
+            deliveryId: intent.deliveryId
+          })
+          if (inserted) {
+            reconciled.push(intent.deliveryId)
+          }
         }
       }
       if (page.length < pageSize) {

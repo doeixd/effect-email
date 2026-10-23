@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url"
 
 const root = process.cwd()
 const work = join(root, ".tarball-smoke")
+let tarball
 const npm = (args) =>
   process.platform === "win32"
     ? execFileSync(
@@ -30,7 +31,7 @@ try {
   const packed = JSON.parse(
     npm(["pack", "--json", "--ignore-scripts"])
   )
-  const tarball = join(root, packed[0].filename)
+  tarball = join(root, packed[0].filename)
   execFileSync("tar", ["-xzf", tarball, "-C", work], {
     cwd: root
   })
@@ -59,4 +60,7 @@ try {
   console.log("tarball smoke test passed")
 } finally {
   rmSync(work, { recursive: true, force: true })
+  if (tarball !== undefined) {
+    rmSync(tarball, { force: true })
+  }
 }

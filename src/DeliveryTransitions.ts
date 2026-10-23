@@ -180,6 +180,20 @@ export const beginAttempt = (
   if (intent.dispatchGeneration !== dispatchGeneration) {
     return staleGeneration(intent.deliveryId, dispatchGeneration)
   }
+  if (
+    intent.status === "accepted" ||
+    intent.status === "rejected" ||
+    intent.status === "uncertain" ||
+    intent.status === "failed" ||
+    intent.status === "canceled" ||
+    intent.status === "delivered" ||
+    intent.status === "bounced" ||
+    intent.status === "complained"
+  ) {
+    return new StoreUnavailable({
+      message: `delivery is already terminal: ${intent.deliveryId}`
+    })
+  }
   if (intent.claimExpiresAt !== undefined) {
     const expiresAt = DateTime.toEpochMillis(intent.claimExpiresAt)
     const current = DateTime.toEpochMillis(now)
@@ -413,6 +427,7 @@ export const redrive = (
     queuedAt: _queuedAt,
     claimId: _claimId,
     claimExpiresAt: _claimExpiresAt,
+    lastEventAt: _lastEventAt,
     ...base
   } = intent
   return {
@@ -501,6 +516,14 @@ export const applyProviderEvent = (
       DateTime.toEpochMillis(intent.lastEventAt)
   ) {
     return intent
+  }
+  if (intent.status === status) {
+    return {
+      ...clearClaim(intent),
+      status,
+      lastEventAt: event.occurredAt,
+      updatedAt: event.occurredAt
+    }
   }
   if (!canProjectEvent(intent.status, status)) {
     return intent

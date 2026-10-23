@@ -91,8 +91,9 @@ describe("DeliveryStore SQL", () => {
         intentsBefore: cutoff,
         eventsBefore: cutoff
       })
-      assert.strictEqual(pruned.intents, 0)
+      assert.strictEqual(pruned.intents, 1)
       assert.strictEqual(pruned.events, 1)
+      assert.isTrue(Option.isNone(yield* store.get(target)))
       assert.strictEqual((yield* store.listEvents(target)).length, 0)
     }).pipe(Effect.provide(layer)))
 

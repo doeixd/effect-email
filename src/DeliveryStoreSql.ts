@@ -426,7 +426,8 @@ export const layerSql = (
                 return Transitions.cancellationOutcome(existing)
               })
             )
-            .pipe(Effect.mapError(normalizeError)),        isCancellationRequested: (deliveryId) =>
+            .pipe(Effect.mapError(normalizeError)),
+        isCancellationRequested: (deliveryId) =>
           Effect.gen(function* () {
             const canceled = yield* sql<{
               readonly delivery_id: string
@@ -618,7 +619,8 @@ export const layerSql = (
                 let deliveryId = event.deliveryId
                 if (
                   deliveryId === undefined &&
-                  event.providerMessageId !== undefined
+                  event.providerMessageId !== undefined &&
+                  event.destinationId !== undefined
                 ) {
                   const correlated = yield* sql<{
                     readonly data: string
@@ -662,7 +664,8 @@ export const layerSql = (
                 return true
               })
             )
-            .pipe(Effect.mapError(normalizeError)),        listEvents: (deliveryId) =>
+            .pipe(Effect.mapError(normalizeError)),
+        listEvents: (deliveryId) =>
           (deliveryId === undefined
             ? allEvents
             : Effect.map(
@@ -687,7 +690,7 @@ export const layerSql = (
                     readonly delivery_id: string
                   }>`DELETE FROM ${sql(
                     intents
-                  )} WHERE status IN (${"rejected"}, ${"failed"}, ${"canceled"}) AND updated_at < ${DateTime.formatIso(
+                  )} WHERE status IN (${"rejected"}, ${"failed"}, ${"canceled"}, ${"delivered"}, ${"bounced"}, ${"complained"}) AND updated_at < ${DateTime.formatIso(
                     options.intentsBefore
                   )} RETURNING delivery_id`
                   intentCount = deleted.length

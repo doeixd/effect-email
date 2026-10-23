@@ -607,14 +607,24 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
 
     const findByProviderMessageId: DeliveryStoreShape["findByProviderMessageId"] =
       (providerMessageId) =>
-        Effect.map(Ref.get(state), (intents) =>
-          Option.fromNullishOr(
-            [...intents.values()].find(
-              (intent) =>
-                intent.receipt?.providerMessageId === providerMessageId
-            )
-          )
-        )
+        Effect.map(Ref.get(state), (intents) => {
+          let latest: DeliveryIntent | undefined
+          for (const intent of intents.values()) {
+            if (
+              intent.receipt?.providerMessageId !== providerMessageId
+            ) {
+              continue
+            }
+            if (
+              latest === undefined ||
+              DateTime.toEpochMillis(intent.updatedAt) >
+                DateTime.toEpochMillis(latest.updatedAt)
+            ) {
+              latest = intent
+            }
+          }
+          return Option.fromNullishOr(latest)
+        })
 
     const appendProviderEvent: DeliveryStoreShape["appendProviderEvent"] = (
       event
@@ -622,7 +632,8 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
       Effect.gen(function* () {
         const correlated =
           event.deliveryId === undefined &&
-          event.providerMessageId !== undefined
+          event.providerMessageId !== undefined &&
+          event.destinationId !== undefined
             ? yield* findByProviderMessageId(event.providerMessageId)
             : Option.none()
         const storedEvent: DeliveryEvent = {

@@ -260,6 +260,79 @@ describe("DeliveryStore", () => {
       )
       assert.strictEqual(allowed.status, "pending")
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("clears event ordering when a delivery is redriven", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const id = deliveryId("dlv_redrive_event_order")
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordAccepted(id, 1, makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(
+          makeDestination({ provider: "mock", account: "default" })
+        ),
+        deliveryId: id,
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      }))
+      yield* store.appendProviderEvent({
+        id: "evt_before_redrive",
+        deliveryId: id,
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(2_000))
+      })
+      yield* store.redrive(id, { acknowledgeDuplicateRisk: true })
+      yield* store.appendProviderEvent({
+        id: "evt_after_redrive",
+        deliveryId: id,
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(1_000))
+      })
+      const stored = yield* store.get(id)
+
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "delivered"
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("keeps event ordering after a repeated status event", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const id = deliveryId("dlv_event_repeat_order")
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordAccepted(id, 1, makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(
+          makeDestination({ provider: "mock", account: "default" })
+        ),
+        deliveryId: id,
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      }))
+      yield* store.appendProviderEvent({
+        id: "evt_delivered_first",
+        deliveryId: id,
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(1_000))
+      })
+      yield* store.appendProviderEvent({
+        id: "evt_delivered_repeat",
+        deliveryId: id,
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(2_000))
+      })
+      yield* store.appendProviderEvent({
+        id: "evt_bounced_old",
+        deliveryId: id,
+        type: "bounced",
+        occurredAt: DateTime.makeUnsafe(new Date(1_500))
+      })
+      const stored = yield* store.get(id)
+
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "delivered"
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("pages tenant-scoped delivery queries", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore.DeliveryStore
@@ -297,6 +370,27 @@ describe("DeliveryStore", () => {
       )
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
 
+  it.effect("rejects a new attempt after terminal acceptance", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const id = deliveryId("dlv_terminal_claim")
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordAccepted(id, 1, makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(
+          makeDestination({ provider: "mock", account: "default" })
+        ),
+        deliveryId: id,
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      }))
+      const retry = yield* Effect.result(store.beginAttempt(id, 1))
+
+      assert.strictEqual(
+        retry._tag === "Failure" && retry.failure._tag,
+        "StoreUnavailable"
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("records redrive actor and reason", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore.DeliveryStore

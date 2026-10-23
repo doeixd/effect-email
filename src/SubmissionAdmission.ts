@@ -19,6 +19,7 @@ import type {
   DeliveryStatusSummary
 } from "./DeliveryStore"
 import { DeliveryStore } from "./DeliveryStore"
+import * as Transitions from "./DeliveryTransitions"
 import type { MailboxInput, MessageDraft, MessageInput } from "./Message"
 import { parseMailbox } from "./Message"
 import type { AdmissionReceipt } from "./Submission"
@@ -385,19 +386,34 @@ export const make = (
                 ? store.findByProviderMessageId(event.providerMessageId)
                 : Effect.succeed(Option.none())
           )
-          if (Option.isNone(stored) || stored.value.tenantId === undefined) {
+          if (
+            Option.isNone(stored) ||
+            stored.value.tenantId === undefined ||
+            !Transitions.eventMatchesIntent(event, stored.value)
+          ) {
             return inserted
           }
           const reason =
             event.type === "complained"
               ? "provider complaint"
               : "provider bounce"
-          for (const recipient of intentAddresses(stored.value)) {
+          const recipients =
+            event.recipient === undefined
+              ? intentAddresses(stored.value)
+              : [event.recipient]
+          for (const recipient of recipients) {
             yield* suppressionStore.value.suppress({
               tenantId: stored.value.tenantId,
               recipient,
               reason
-            })
+            }).pipe(
+              Effect.catchTag("StoreUnavailable", (cause) =>
+                Effect.logWarning(
+                  "provider event suppression failed",
+                  cause
+                )
+              )
+            )
           }
           return inserted
         }

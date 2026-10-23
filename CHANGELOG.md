@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1
+
+- SQL pruning now matches memory retention for delivered, bounced, and
+  complained intents.
+- Redrive clears event ordering so the new dispatch generation can accept its
+  own provider events.
+- Provider-message correlation requires a destination and event projection
+  keeps ordering after repeated same-status events.
+- Automatic complaint/bounce suppression validates destination/provider and
+  isolates suppression-store failures from event ingestion.
+- Terminal deliveries reject new attempt claims.
+- Gateway delivery listings accept bounded tenant, limit, and cursor queries.
+- Memory provider-message lookup now matches SQL by selecting the latest intent.
 ## 0.3.0
 
 - HTTP provider request failures before a response now surface as

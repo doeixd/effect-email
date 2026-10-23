@@ -16,7 +16,9 @@ const page = yield* admission.listForTenant({
 Results are ordered by delivery ID and include status, attempts, claim state,
 receipt, errors, provider events, and redrive history. `listAll` and the legacy
 status accessors remain for compatibility, but background work uses bounded
-queries.
+queries. The HTTP `GET /deliveries` route accepts `tenantId`, `limit`, and
+`after` for bounded operator pages; without `tenantId` it retains the legacy
+unscoped listing.
 
 ## Redrive audit
 

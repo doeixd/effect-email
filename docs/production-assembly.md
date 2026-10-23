@@ -14,7 +14,9 @@ PgClient
 ```
 
 Run the publisher, worker, and reconciler through `Service.start`. It returns a
-scoped handle with `health` and `shutdown`, and the three loops remain separate:
+scoped handle with `health` and `shutdown`, and the three loops remain separate.
+When supplying a custom queue, pass the matching `queueName`; the worker creates
+its own queue handle by name:
 
 - The publisher recovers committed-but-unqueued intents.
 - The worker claims and dispatches queue items.

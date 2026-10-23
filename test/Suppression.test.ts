@@ -3,7 +3,12 @@ import { DateTime, Effect, Layer, Option } from "effect"
 import { SqliteClient } from "@effect/sql-sqlite-node"
 import * as DeliveryStore from "../src/DeliveryStore"
 import * as Email from "../src/Email"
-import { deliveryId, tenantId } from "../src/Ids"
+import {
+  deliveryId,
+  destinationId,
+  makeDestination,
+  tenantId
+} from "../src/Ids"
 import * as Mock from "../src/providers/Mock"
 import * as Submissions from "../src/queue/Submissions"
 import * as SubmissionAdmission from "../src/SubmissionAdmission"
@@ -94,6 +99,53 @@ describe("SuppressionStore", () => {
       assert.strictEqual(pruned, 1)
     }).pipe(Effect.provide(sqlLayer)))
 
+  it.effect("does not suppress from a cross-account event", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const id = deliveryId("dlv_cross_account_complaint")
+      const shared = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Suppression.layerMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: client.transport }
+        })
+      )
+      const app = SubmissionAdmission.layer({
+        defaultFrom: "billing@example.com"
+      }).pipe(Layer.provideMerge(shared))
+
+      const blocked = yield* Effect.gen(function* () {
+        const admission =
+          yield* SubmissionAdmission.SubmissionAdmission
+        const suppression = yield* Suppression.SuppressionStore
+        yield* admission.accept({
+          tenantId: tenant,
+          deliveryId: id,
+          message: {
+            to: "cross@example.com",
+            subject: "Cross account",
+            text: "Body"
+          }
+        })
+        yield* admission.appendProviderEvent({
+          id: "evt_cross_account",
+          deliveryId: id,
+          destinationId: destinationId(
+            makeDestination({ provider: "mock", account: "other" })
+          ),
+          type: "complained",
+          occurredAt: yield* DateTime.now
+        })
+        return yield* suppression.isSuppressed(
+          tenant,
+          "cross@example.com"
+        )
+      }).pipe(Effect.provide(app))
+
+      assert.isTrue(Option.isNone(blocked))
+    }))
   it.effect("blocks newly suppressed recipients before dispatch", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

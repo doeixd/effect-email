@@ -14,7 +14,10 @@ import {
   TemplateError,
   UnsupportedCapability
 } from "../EmailError"
-import { deliveryId as makeDeliveryId } from "../Ids"
+import {
+  deliveryId as makeDeliveryId,
+  tenantId as makeTenantId
+} from "../Ids"
 import {
   DeliveryId as DeliveryIdSchema,
   RouteName as RouteNameSchema,
@@ -493,10 +496,57 @@ const makeHandle = (options: GatewayOptions) =>
         { status: 400 }
       )
     }
+    const tenantParam = parsedUrl.searchParams.get("tenantId")
+    if (tenantParam !== null && tenantParam.length === 0) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          error: {
+            tag: "InvalidMessage",
+            message: "tenantId must not be empty"
+          }
+        },
+        { status: 400 }
+      )
+    }
+    const limitParam = Number(
+      parsedUrl.searchParams.get("limit") ?? "100"
+    )
+    if (!Number.isInteger(limitParam) || limitParam < 1) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          error: {
+            tag: "InvalidMessage",
+            message: "limit must be a positive integer"
+          }
+        },
+        { status: 400 }
+      )
+    }
+    const afterParam = parsedUrl.searchParams.get("after")
+    if (afterParam !== null && afterParam.length === 0) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          error: {
+            tag: "InvalidMessage",
+            message: "after must not be empty"
+          }
+        },
+        { status: 400 }
+      )
+    }
     const listed =
-      status === "uncertain"
-        ? yield* admission.listUncertain
-        : yield* admission.listFailed
+      tenantParam === null
+        ? status === "uncertain"
+          ? yield* admission.listUncertain
+          : yield* admission.listFailed
+        : yield* admission.listForTenant({
+            tenantId: makeTenantId(tenantParam),
+            status,
+            limit: limitParam,
+            ...(afterParam === null
+              ? {}
+              : { after: makeDeliveryId(afterParam) })
+          })
     return HttpServerResponse.jsonUnsafe({
       deliveries: listed.map(intentSummary)
     })
