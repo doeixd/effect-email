@@ -1,12 +1,18 @@
 import { DateTime, Duration } from "effect"
 import type {
   CreateDeliveryIntent,
+  DeliveryAttempt,
+  DeliveryAttemptStatus,
   DeliveryEvent,
   DeliveryIntent
 } from "./DeliveryStore"
 import { deliveryStatusForEvent } from "./DeliveryStore"
 import { IdempotencyConflict, StoreUnavailable } from "./EmailError"
-import type { AttemptId, DeliveryId } from "./Ids"
+import type {
+  AttemptId,
+  DeliveryId,
+  DestinationId
+} from "./Ids"
 import { newAttemptId } from "./Ids"
 
 const canonical = (value: unknown): unknown => {
@@ -106,6 +112,46 @@ const clearClaim = (intent: DeliveryIntent): DeliveryIntent => {
   return rest
 }
 
+const updateAttempt = (
+  intent: DeliveryIntent,
+  claimId: AttemptId | undefined,
+  status: DeliveryAttemptStatus,
+  now: DateTime.Utc,
+  patch: {
+    readonly destinationId?: DestinationId
+    readonly receipt?: DeliveryIntent["receipt"]
+    readonly error?: DeliveryIntent["error"]
+  } = {}
+): ReadonlyArray<DeliveryAttempt> => {
+  const history = intent.attemptHistory ?? []
+  let index = -1
+  for (let cursor = history.length - 1; cursor >= 0; cursor -= 1) {
+    const attempt = history[cursor]!
+    if (
+      claimId !== undefined
+        ? attempt.attemptId === claimId
+        : attempt.status === "in-progress"
+    ) {
+      index = cursor
+      break
+    }
+  }
+  if (index < 0) {
+    return history
+  }
+  const next = [...history]
+  next[index] = {
+    ...next[index]!,
+    status,
+    updatedAt: now,
+    ...(patch.destinationId === undefined
+      ? {}
+      : { destinationId: patch.destinationId }),
+    ...(patch.receipt === undefined ? {} : { receipt: patch.receipt }),
+    ...(patch.error === undefined ? {} : { error: patch.error })
+  }
+  return next
+}
 const transition = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
@@ -154,6 +200,20 @@ export const beginAttempt = (
       now,
       Duration.millis(leaseMillis)
     ),
+    attemptHistory: [
+      ...(intent.attemptHistory ?? []),
+      {
+        attemptId: claimId,
+        deliveryId: intent.deliveryId,
+        ...(intent.tenantId === undefined
+          ? {}
+          : { tenantId: intent.tenantId }),
+        dispatchGeneration,
+        status: "in-progress",
+        startedAt: now,
+        updatedAt: now
+      }
+    ],
     updatedAt: now
   }
 }
@@ -172,7 +232,19 @@ export const recordAccepted = (
     (current) => ({
       ...current,
       status: "accepted",
-      receipt
+      receipt,
+      attemptHistory: updateAttempt(
+        current,
+        claimId,
+        "accepted",
+        now,
+        {
+          ...(receipt?.destinationId === undefined
+            ? {}
+            : { destinationId: receipt.destinationId }),
+          receipt
+        }
+      )
     }),
     claimId
   )
@@ -191,7 +263,14 @@ export const recordRejected = (
     (current) => ({
       ...current,
       status: "rejected",
-      error
+      error,
+      attemptHistory: updateAttempt(
+        current,
+        claimId,
+        "rejected",
+        now,
+        { error }
+      )
     }),
     claimId
   )
@@ -210,7 +289,14 @@ export const recordUncertain = (
     (current) => ({
       ...current,
       status: "uncertain",
-      error
+      error,
+      attemptHistory: updateAttempt(
+        current,
+        claimId,
+        "uncertain",
+        now,
+        { error }
+      )
     }),
     claimId
   )
@@ -229,7 +315,14 @@ export const recordFailed = (
     (current) => ({
       ...current,
       status: "failed",
-      error
+      error,
+      attemptHistory: updateAttempt(
+        current,
+        claimId,
+        "failed",
+        now,
+        { error }
+      )
     }),
     claimId
   )
@@ -253,6 +346,13 @@ export const recordDeferred = (
       nextAttemptAt: DateTime.addDuration(
         now,
         Duration.millis(delayMillis)
+      ),
+      attemptHistory: updateAttempt(
+        current,
+        claimId,
+        "deferred",
+        now,
+        { error }
       )
     }),
     claimId

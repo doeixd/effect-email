@@ -16,7 +16,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 2 | Complete | Shared retry decisions, permanent-error worker handling, response-loss regression, retry matrix tests |
 | 3 | Complete | Native batch retry preserves indexes and accepted/uncertain slots; opt-in subset retry, fallback capability validation, composite limits, and policy-order docs added |
 | 4 | Complete | Pure lifecycle transitions are shared by memory and SQL; SQL transitions no longer use memory restore/snapshot; parity coverage added |
-| 5 | Partial | Atomic claims with lease metadata and atomic SQL intent creation are implemented; tenant identity migration and attempt history remain |
+| 5 | Partial | Atomic claims, atomic SQL creation, tenant storage/indexing, and embedded attempt history are implemented; composite tenant keys and normalized attempt storage remain |
 | 6-12 | Not started | See the PR sequence |
 
 ## 1. Objective
@@ -54,13 +54,14 @@ already addressed:
 
 Still current:
 
-- Tenant identity is optional in delivery intents and the schema still uses
-  `delivery_id` as the primary key.
+- Tenant identity is stored and indexed, but `delivery_id` remains the primary
+  key and the API does not require tenant scoping.
+- Attempt history is embedded in intent JSON; a normalized attempt table remains
+  future work.
 - Event waits return the first stored event.
 - Suppression service discovery is optional.
 - Background work uses unbounded scans.
 - Registry routes are captured at layer construction.
-- Attempt history and recipient-level outcomes are not first-class storage.
 - There is no complete production assembly example.
 
 ## 3. Target ownership
@@ -430,8 +431,9 @@ Priority: P1 quality foundation; P2 extended coverage.
 | 11 | Operator queries, metrics, retention | 6, 8 | Bounded queries, redaction, reference-safe pruning |
 | 12 | Provider/SMTP conformance + release qualification | 3, 10, 11 | Published support matrix and tarball smoke tests |
 
-PRs 2-4 are complete. PR 5 is partially complete: atomic claims and creation
-are done; tenant identity migration and per-attempt history remain.
+PRs 2-4 are complete. PR 5 is partially complete: atomic claims, atomic
+creation, tenant storage/indexing, and embedded attempt history are done;
+composite tenant keys and normalized attempt storage remain.
 
 ## 15. Compatibility and migration
 

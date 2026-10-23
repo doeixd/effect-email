@@ -120,12 +120,12 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 
 | Gap | Current evidence | Consequence |
 | --- | --- | --- |
-| Tenant identity is optional in intents | `DeliveryIntent.tenantId` | Identity is not consistently part of durable lookup and correlation |
+| Tenant identity is stored but not required for lookup | `DeliveryIntent.tenantId`, `tenant_id` column | A caller can still address a delivery without tenant scoping |
 | Event wait uses the first stored event | `workflow/Submissions.ts` | An unrelated open/click event can satisfy the wait |
 | Suppression discovery is optional | `SubmissionAdmission` uses `serviceOption` | A production assembly can accidentally omit enforcement |
 | Background scans are unbounded | `listAll` and status scans | Publisher/reconciler work grows with total history |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
-| Storage schema is intent-oriented | migrations `0001`-`0004` | Attempt history and recipient-level outcomes are not first-class |
+| Storage schema is intent-oriented | migrations `0001`-`0005` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |
 | No production assembly example | `examples/` contains direct, provider, route, and deployment samples | Operators must infer worker, publisher, reconciler, and shutdown wiring |
 

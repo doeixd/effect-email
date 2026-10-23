@@ -29,6 +29,10 @@
 - SQL intent creation is atomic under concurrent insertion. Identical content
   returns the existing intent; different content returns `IdempotencyConflict`.
 - Added concurrent create/claim coverage on SQLite and PostgreSQL.
+- Delivery intents retain an embedded attempt history with claim IDs,
+  timestamps, status, destination, receipt, and error details.
+- SQL intents store and index `tenant_id`; `0005_delivery_tenant.sql` backfills
+  existing PostgreSQL rows from stored JSON.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

@@ -10,6 +10,7 @@ import {
 import type {
   AttemptId,
   DeliveryId,
+  DestinationId,
   RouteName,
   TenantId
 } from "./Ids"
@@ -89,6 +90,26 @@ export interface DeliveryStoreSnapshot {
   readonly cancellations?: ReadonlyArray<DeliveryId>
 }
 
+export type DeliveryAttemptStatus =
+  | "in-progress"
+  | "accepted"
+  | "rejected"
+  | "uncertain"
+  | "failed"
+  | "deferred"
+
+export interface DeliveryAttempt {
+  readonly attemptId: AttemptId
+  readonly deliveryId: DeliveryId
+  readonly tenantId?: TenantId
+  readonly dispatchGeneration: number
+  readonly status: DeliveryAttemptStatus
+  readonly startedAt: DateTime.Utc
+  readonly updatedAt: DateTime.Utc
+  readonly destinationId?: DestinationId
+  readonly receipt?: SubmissionReceipt
+  readonly error?: EmailError
+}
 export interface RawEnvelope {
   readonly mailFrom: string | null
   readonly rcptTo: ReadonlyArray<string>
@@ -115,6 +136,7 @@ export interface DeliveryIntent {
   readonly error?: EmailError
   readonly claimId?: AttemptId
   readonly claimExpiresAt?: DateTime.Utc
+  readonly attemptHistory?: ReadonlyArray<DeliveryAttempt>
 }
 
 export interface CreateDeliveryIntent {
@@ -207,6 +229,9 @@ export interface DeliveryStoreShape {
     ReadonlyArray<DeliveryIntent>,
     StoreUnavailable
   >
+  readonly listAttempts: (
+    deliveryId: DeliveryId
+  ) => Effect.Effect<ReadonlyArray<DeliveryAttempt>, StoreUnavailable>
   readonly appendProviderEvent: (
     event: DeliveryEvent
   ) => Effect.Effect<boolean, StoreUnavailable>
@@ -626,6 +651,12 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
         intents.filter((intent) => intent.queuedAt === undefined)
       ),
       listFailed: listByStatus("failed"),
+      listAttempts: (deliveryId) =>
+        Effect.map(
+          Ref.get(state),
+          (intents) =>
+            intents.get(deliveryId)?.attemptHistory ?? []
+        ),
       appendProviderEvent,
       listEvents,
       prune,

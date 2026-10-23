@@ -163,6 +163,7 @@ describe("DeliveryStore SQL", () => {
         yield* store.requestCancellation(id)
         const final = yield* store.get(id)
         const events = yield* store.listEvents(id)
+        const attempts = yield* store.listAttempts(id)
 
         return {
           deliveredStatus: Option.isSome(delivered)
@@ -186,7 +187,8 @@ describe("DeliveryStore SQL", () => {
           cancellationRequested: Option.isSome(final)
             ? final.value.cancellationRequested
             : undefined,
-          events: events.map((event) => event.type)
+          events: events.map((event) => event.type),
+          attempts: attempts.map((attempt) => attempt.status)
         }
       })
 

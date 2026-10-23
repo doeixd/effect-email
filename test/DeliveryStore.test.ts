@@ -167,6 +167,7 @@ describe("DeliveryStore", () => {
       )
       yield* store.recordAccepted(target, 1, receipt, claimed.claimId)
       const stored = yield* store.get(target)
+      const attempts = yield* store.listAttempts(target)
 
       assert.isDefined(claimed.claimId)
       assert.strictEqual(
@@ -185,6 +186,8 @@ describe("DeliveryStore", () => {
       assert.isUndefined(
         Option.isSome(stored) ? stored.value.claimId : "missing"
       )
+      assert.strictEqual(attempts.length, 1)
+      assert.strictEqual(attempts[0]?.status, "accepted")
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
 
   it.effect("creates one intent under concurrent identical admission", () =>

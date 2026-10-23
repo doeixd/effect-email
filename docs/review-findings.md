@@ -37,6 +37,8 @@ Follow-up snapshot (`f817a95`):
   coverage for deferred, accepted, event-projected, redrive, and cancellation paths.
 - Attempts acquire exclusive claims with lease metadata. Concurrent intent
   creation and claim races are covered on SQLite and PostgreSQL.
+- Intents retain embedded attempt history, and SQL stores/indexes `tenant_id`
+  with a PostgreSQL backfill migration.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
