@@ -26,14 +26,15 @@ const program = Effect.gen(function* () {
       PgClient.layer({ url: Redacted.make(url) })
     )
   )
+  const emailLayer = yield* Email.layerValidated({
+    defaultFrom: "billing@example.com",
+    routes: { default: client.transport }
+  })
   const app = Layer.mergeAll(
     SubmissionAdmission.layer({
       defaultFrom: "billing@example.com"
     }).pipe(Layer.provideMerge(base)),
-    Email.layer({
-      defaultFrom: "billing@example.com",
-      routes: { default: client.transport }
-    })
+    emailLayer
   )
 
   return yield* Effect.gen(function* () {

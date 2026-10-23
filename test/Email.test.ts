@@ -27,6 +27,34 @@ const makeEmail = (
     routes: options.routes ?? { default: recorder.transport }
   })
 
+describe("Email.layerValidated", () => {
+  it.effect("returns typed configuration errors", () =>
+    Effect.gen(function* () {
+      const recorder = yield* RecordingTransport.make()
+      const empty = yield* Effect.result(
+        Email.layerValidated({
+          defaultFrom: "billing@example.com",
+          routes: {}
+        })
+      )
+      const unknown = yield* Effect.result(
+        Email.layerValidated({
+          defaultFrom: "billing@example.com",
+          defaultRoute: routeName("missing"),
+          routes: { default: recorder.transport }
+        })
+      )
+
+      assert.strictEqual(
+        empty._tag === "Failure" && empty.failure._tag,
+        "ConfigurationError"
+      )
+      assert.strictEqual(
+        unknown._tag === "Failure" && unknown.failure._tag,
+        "ConfigurationError"
+      )
+    }))
+})
 describe("Email", () => {
   it.effect("redacts sensitive transport error causes", () =>
     Effect.sync(() => {

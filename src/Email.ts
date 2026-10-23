@@ -2,7 +2,12 @@ import { Context, Effect, Layer, Result, Stream } from "effect"
 import type { DeliveryId, RouteName } from "./Ids"
 import { destinationId, newDeliveryId, routeName } from "./Ids"
 import type { EmailError } from "./EmailError"
-import { certaintyOf, DeliveryUncertain, UnsupportedCapability } from "./EmailError"
+import {
+  certaintyOf,
+  ConfigurationError,
+  DeliveryUncertain,
+  UnsupportedCapability
+} from "./EmailError"
 import type {
   MailboxInput,
   MessageDraft,
@@ -88,6 +93,52 @@ export class Email extends Context.Service<Email, EmailShape>()(
     )
   }
 
+  static layerValidated(
+    options: EmailOptions
+  ): Effect.Effect<Layer.Layer<Email>, ConfigurationError> {
+    return Effect.gen(function* () {
+      const from = yield* Effect.try({
+        try: () => normalizeMailbox(options.defaultFrom),
+        catch: (cause) =>
+          new ConfigurationError({
+            message:
+              cause instanceof Error
+                ? cause.message
+                : `invalid default sender: ${String(cause)}`
+          })
+      })
+      const routes = new Map<string, Transport>(
+        Object.entries(options.routes)
+      )
+      if (routes.size === 0) {
+        return yield* new ConfigurationError({
+          message: "Email.layer requires at least one route"
+        })
+      }
+      const defaultRoute = yield* Effect.try({
+        try: () =>
+          resolveDefaultRoute(options.defaultRoute, routes),
+        catch: (cause) =>
+          new ConfigurationError({
+            message:
+              cause instanceof Error
+                ? cause.message
+                : String(cause)
+          })
+      })
+      return Layer.succeed(
+        Email,
+        Email.of(
+          makeEmailShape(
+            from,
+            routes,
+            defaultRoute,
+            options.renderer
+          )
+        )
+      )
+    })
+  }
   static layerFromRegistry(options: {
     readonly defaultFrom: MailboxInput
     readonly registry: TransportRegistryShape
@@ -619,6 +670,7 @@ const makeSendStream = (
   }
 
 export const layer = Email.layer
+export const layerValidated = Email.layerValidated
 export const layerFromRegistry = Email.layerFromRegistry
 export const layerFromRegistryLayer = Email.layerFromRegistryLayer
 export const layerTransport = Email.layerTransport

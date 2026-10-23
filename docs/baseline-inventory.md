@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 296 tests across 59 files.
+- `bun run check`: pass, 297 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -138,6 +138,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   lookup results as correlated events.
 - Gateway diagnostics and health use grouped status counts instead of loading
   all pending, failed, and uncertain intents.
+- `Email.layerValidated` returns typed configuration failures for invalid
+  senders, empty routes, and unknown default routes.
 - Provider support is labeled by evidence in `docs/provider-support.md`; SMTP
   covers slow clients and invalid-command recovery.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
@@ -159,7 +161,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |
 | Remote attachment snapshots are not content-addressed | URL attachments remain mutable references | Durable replay can observe changed remote content |
-| Typed configuration errors are not universal | `Email.layer` still throws for some invalid configuration | Some startup failures are defects rather than typed errors |
+| Legacy `Email.layer` still throws | `Email.layerValidated` provides typed failures | Prefer `layerValidated` for production assembly |
 
 These gaps are addressed by the workstreams and PR sequence in
 `docs/service-improvement-plan.md`. They are not release blockers by themselves;

@@ -70,4 +70,4 @@ DATABASE_URL=postgres://user:pass@localhost:5432/effect_email \
 ```
 
 The example uses the Mock provider so it does not require provider credentials.
-Replace the `Email.layer` route with a provider transport for real delivery.
+Use `Email.layerValidated` for typed configuration failures when assembling the\nroute layer. Replace the Mock route with a provider transport for real delivery.

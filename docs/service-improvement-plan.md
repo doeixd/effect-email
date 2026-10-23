@@ -21,7 +21,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 7 | Complete | Shared admission preparation, `Routing.explain`, hard requirements, explicit-route diagnostics, and provider-template/registry boundaries documented |
 | 8 | Complete | Events correlate through receipt message IDs and destination, preserve ingestion time, and project deterministically without regressing terminal state |
 | 9 | Partial | Typed event waits, dispatch-time suppression, automatic complaint suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; bounce policy and wait deadlines remain |
-| 10 | Partial | PostgreSQL service example, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; typed configuration errors and the optional runtime helper remain |
+| 10 | Partial | PostgreSQL service example, typed `Email.layerValidated`, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; the optional runtime helper remains |
 | 11 | Complete | Tenant/status paging, redrive audit, retention safety, metrics, provider-lookup reconciliation, grouped diagnostics, and operations docs are implemented |
 | 12 | Partial | Provider evidence matrix, SMTP slow-client/invalid-command coverage, dependency strategy, release guidance, and tarball smoke added; live sandbox tests remain |
 
@@ -80,7 +80,8 @@ Still current:
 - Registry routes are captured at layer construction; live reconfiguration
   remains deferred.
 - Remote attachment URLs are not content-addressed for durable replay.
-- Some startup configuration failures are still defects rather than typed errors.
+- Legacy `Email.layer` still throws; use `Email.layerValidated` for typed
+  configuration failures.
 - No live provider sandbox suite is enabled.
 
 ## 3. Target ownership

@@ -138,6 +138,12 @@ export class TemplateError extends Schema.TaggedError<TemplateError>()(
   }
 }
 
+export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()(
+  "ConfigurationError",
+  {
+    message: Schema.String
+  }
+) {}
 export class StoreUnavailable extends Schema.TaggedError<StoreUnavailable>()(
   "StoreUnavailable",
   {
@@ -198,6 +204,7 @@ export const EmailError = Schema.Union([
   UnsupportedCapability,
   IdempotencyConflict,
   TemplateError,
+  ConfigurationError,
   StoreUnavailable,
   RecipientSuppressed,
   SubmissionCanceled
@@ -218,6 +225,7 @@ export const certaintyOf = (error: EmailError): SubmissionCertainty => {
     case "TransportUnavailable":
     case "UnsupportedCapability":
     case "TemplateError":
+    case "ConfigurationError":
     case "StoreUnavailable":
     case "RecipientSuppressed":
     case "SubmissionCanceled":
@@ -239,6 +247,7 @@ export const isRetryable = (error: EmailError): boolean => {
     case "InvalidMessage":
     case "MalformedProviderResponse":
     case "TemplateError":
+    case "ConfigurationError":
     case "StoreUnavailable":
     case "RecipientSuppressed":
     case "SubmissionCanceled":

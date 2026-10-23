@@ -57,6 +57,7 @@ Follow-up snapshot (`9cda629`):
 - Complaint events automatically update suppression when a store is assembled.
 - Added paged provider-lookup reconciliation for uncertain deliveries.
 - Gateway diagnostics/health use grouped status summaries.
+- Added `Email.layerValidated` for typed assembly failures.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
