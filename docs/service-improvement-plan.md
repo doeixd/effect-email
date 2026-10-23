@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `4bf13f96ff90d521be87a1441b15a7ef555db387`
-Status: PR 1 complete; PR 2 complete in the working tree; later PRs proposed
+Current baseline: `38f452a` (PR 2)
+Status: PR 1 and PR 2 complete; later PRs proposed
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
