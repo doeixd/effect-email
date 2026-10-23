@@ -204,8 +204,7 @@ export const start = <P = unknown>(
                   onNone: () => rejectExcess(socket),
                   onSome: () => Effect.void
                 })
-              ),
-              Effect.catch(() => Effect.void)
+              )
             )
 
     return {

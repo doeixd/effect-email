@@ -95,7 +95,7 @@ const attachment = (
   switch (value.source._tag) {
     case "path":
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message:
             "Cloudflare Email Service cannot read attachments from local paths",
           provider: "cloudflare-email-service",
@@ -104,7 +104,7 @@ const attachment = (
       )
     case "url":
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message:
             "Cloudflare Email Service does not fetch remote attachment URLs",
           provider: "cloudflare-email-service",
@@ -137,7 +137,7 @@ const payloadFor = (
 > => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Cloudflare Email Service requires rendered text or HTML",
         provider: "cloudflare-email-service",
@@ -147,7 +147,7 @@ const payloadFor = (
   }
   if (message.replyTo.length > 1) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Cloudflare Email Service accepts a single reply-to address",
         provider: "cloudflare-email-service",
         capability: "reply-to"
@@ -195,21 +195,21 @@ const failure = (cause: unknown): TransportError => {
     code === "E_SENDER_DOMAIN_NOT_AVAILABLE" ||
     code === "E_RECIPIENT_NOT_ALLOWED"
   ) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (
     code === "E_RATE_LIMIT_EXCEEDED" ||
     code === "E_DAILY_LIMIT_EXCEEDED"
   ) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (code === "E_DELIVERY_FAILED") {
-    return new DeliveryUncertain(common)
+    return DeliveryUncertain.new(common)
   }
   if (code === "E_INTERNAL_SERVER_ERROR") {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 export const make = (
@@ -231,14 +231,14 @@ export const make = (
           envelope.message.cc.length +
           envelope.message.bcc.length
         if (recipients > RECIPIENT_LIMIT) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message: `${recipients} recipients exceed the Cloudflare limit of ${RECIPIENT_LIMIT}`,
             provider: "cloudflare-email-service",
             capability: "recipients"
           })
         }
         if (envelope.message.attachments.length > ATTACHMENT_LIMIT) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message: `${envelope.message.attachments.length} attachments exceed the Cloudflare limit of ${ATTACHMENT_LIMIT}`,
             provider: "cloudflare-email-service",
             capability: "attachments"

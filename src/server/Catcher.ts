@@ -79,7 +79,7 @@ const denyUnauthorized = (
   request: HttpServerRequest.HttpServerRequest
 ): Effect.Effect<void, EmailError> =>
   Effect.fail(
-    new AuthenticationFailed({
+    AuthenticationFailed.new({
       message: `catcher authorization required for ${request.method} ${request.url}`,
       provider: "catcher"
     })
@@ -147,21 +147,7 @@ const makeHandler = (options: CatcherOptions): Effect.Effect<
     { error: { tag: "NotFound", message: "route not found" } },
     { status: 404 }
   )
-}).pipe(
-  Effect.catch(() =>
-    Effect.succeed(
-      HttpServerResponse.jsonUnsafe(
-        {
-          error: {
-            tag: "StoreUnavailable",
-            message: "catcher request failed"
-          }
-        },
-        { status: 500 }
-      )
-    )
-  )
-)
+})
 
 export const make = (
   options: CatcherOptions = {}

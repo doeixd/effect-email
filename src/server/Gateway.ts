@@ -209,7 +209,7 @@ export interface GatewayOptions {
 
 const denyEventVerification = (): Effect.Effect<void, EmailError> =>
   Effect.fail(
-    new AuthenticationFailed({
+    AuthenticationFailed.new({
       message: "provider event verification is required",
       provider: "gateway"
     })
@@ -219,7 +219,7 @@ const denyUnauthorized = (
   request: HttpServerRequest.HttpServerRequest
 ): Effect.Effect<void, EmailError> =>
   Effect.fail(
-    new AuthenticationFailed({
+    AuthenticationFailed.new({
       message: `authorization required for ${request.method} ${request.url}`,
       provider: "gateway"
     })

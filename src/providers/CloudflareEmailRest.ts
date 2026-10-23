@@ -149,7 +149,7 @@ const attachmentFor = (
 ): Effect.Effect<CloudflareEmailRestAttachment, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Cloudflare Email Service requires attachment bytes; provide content instead of a path or URL",
         provider: "cloudflare-email-rest",
@@ -177,7 +177,7 @@ const payloadFor = (
 ): Effect.Effect<CloudflareEmailRestPayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Cloudflare Email Service adapter supports rendered content only, received ${message.content._tag}`,
         provider: "cloudflare-email-rest",
         capability: "content"
@@ -187,7 +187,7 @@ const payloadFor = (
   const recipients = message.to.length + message.cc.length + message.bcc.length
   if (recipients > RECIPIENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Cloudflare Email Service accepts at most ${RECIPIENT_LIMIT} recipients across to/cc/bcc, got ${recipients}`,
         provider: "cloudflare-email-rest",
         capability: "recipients"
@@ -196,7 +196,7 @@ const payloadFor = (
   }
   if (message.attachments.length > ATTACHMENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Cloudflare Email Service accepts at most ${ATTACHMENT_LIMIT} attachments, got ${message.attachments.length}`,
         provider: "cloudflare-email-rest",
         capability: "attachments"
@@ -205,7 +205,7 @@ const payloadFor = (
   }
   if (message.replyTo.length > 1) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Cloudflare Email Service accepts a single reply-to address",
         provider: "cloudflare-email-rest",
         capability: "reply-to"
@@ -304,15 +304,15 @@ const classifyFailure = (
   const kind =
     first?.code === undefined ? undefined : ERROR_CODES[first.code]
   if (kind === "auth" || response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (kind === "rate" || response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (kind === "network" || response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const makeSendEmail = (
@@ -341,7 +341,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message:
               "Cloudflare Email Service request failed before a response was received; outcome is unknown",
             provider: "cloudflare-email-rest",
@@ -355,7 +355,7 @@ const makeSendEmail = (
     const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Cloudflare Email Service returned unreadable JSON",
             provider: "cloudflare-email-rest",
             status: response.status,
@@ -368,7 +368,7 @@ const makeSendEmail = (
     )(raw).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Cloudflare Email Service returned an unreadable response",
             provider: "cloudflare-email-rest",
             status: response.status,
@@ -378,7 +378,7 @@ const makeSendEmail = (
     )
     const failure = body.errors?.[0]?.message
     if (body.success === false) {
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         message: failure ?? "Cloudflare Email Service rejected the send",
         provider: "cloudflare-email-rest",
         status: response.status,
@@ -391,7 +391,7 @@ const makeSendEmail = (
     const suppressed = result.suppressed_recipients ?? []
     const accepted = [...(result.delivered ?? []), ...(result.queued ?? [])]
     if (bounced.length > 0 && accepted.length === 0) {
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         message: `permanently bounced for every recipient: ${bounced.join(", ")}`,
         provider: "cloudflare-email-rest",
         status: response.status,
@@ -400,7 +400,7 @@ const makeSendEmail = (
       })
     }
     if (suppressed.length > 0 && accepted.length === 0) {
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         message: `suppressed every recipient: ${suppressed.join(", ")}`,
         provider: "cloudflare-email-rest",
         status: response.status,
@@ -409,7 +409,7 @@ const makeSendEmail = (
       })
     }
     if (bounced.length > 0 || suppressed.length > 0) {
-      return yield* new DeliveryUncertain({
+      return yield* DeliveryUncertain.new({
         message: `some recipients were not accepted: ${[
           ...bounced,
           ...suppressed
@@ -420,7 +420,7 @@ const makeSendEmail = (
       })
     }
     if (result.message_id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message:
           "Cloudflare Email Service accepted the request without a message id",
         provider: "cloudflare-email-rest",

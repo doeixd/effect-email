@@ -210,7 +210,7 @@ describe("Submission queue", () => {
         yield* store.recordDeferred(
           delivery,
           1,
-          new TransportUnavailable({
+          TransportUnavailable.new({
             message: "try later",
             provider: "mock",
             retryable: true
@@ -395,7 +395,7 @@ describe("Submission queue", () => {
         ...client.transport,
         send: () =>
           Effect.fail(
-            new UnsupportedCapability({
+            UnsupportedCapability.new({
               message: "attachments unsupported",
               capability: "attachments"
             }) as unknown as TransportError
@@ -641,7 +641,7 @@ describe("Submission queue", () => {
           ...store,
           recordAccepted: () =>
             Effect.fail(
-              new StoreUnavailable({
+              StoreUnavailable.new({
                 message: "outcome store unavailable"
               })
             )
@@ -749,7 +749,7 @@ describe("Submission queue", () => {
         yield* store.recordUncertain(
           target,
           1,
-          new TransportUnavailable({
+          TransportUnavailable.new({
             message: "unknown",
             provider: "mock"
           })

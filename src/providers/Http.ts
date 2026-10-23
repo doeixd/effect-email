@@ -152,7 +152,7 @@ const attachmentFor = (
 ): Effect.Effect<Record<string, unknown>, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "the generic HTTP body encoder requires attachment bytes; provide content or a custom body",
         provider,
@@ -295,18 +295,18 @@ const failureFor = (
   }
   switch (kind) {
     case "authentication":
-      return new AuthenticationFailed(common)
+      return AuthenticationFailed.new(common)
     case "rate-limit":
-      return new RateLimited({ ...common, retryable: classification?.retryable ?? true })
+      return RateLimited.new({ ...common, retryable: classification?.retryable ?? true })
     case "unavailable":
-      return new TransportUnavailable({
+      return TransportUnavailable.new({
         ...common,
         retryable: classification?.retryable ?? true
       })
     case "uncertain":
-      return new DeliveryUncertain(common)
+      return DeliveryUncertain.new(common)
     case "rejected":
-      return new ProviderRejected(common)
+      return ProviderRejected.new(common)
   }
 }
 
@@ -455,7 +455,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "HTTP endpoint request failed before a response was received; outcome is unknown",
             provider,
             cause

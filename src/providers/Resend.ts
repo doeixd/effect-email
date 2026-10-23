@@ -119,7 +119,7 @@ const attachmentFor = (
 ): Effect.Effect<ResendAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Resend does not accept remote attachment URLs",
         provider: "resend",
         capability: "remote-attachments"
@@ -128,7 +128,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Resend adapter cannot read attachments from local paths; provide bytes instead",
         provider: "resend",
@@ -157,7 +157,7 @@ const payloadFor = (
 ): Effect.Effect<ResendPayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Resend adapter supports rendered content only, received ${message.content._tag}`,
         provider: "resend",
         capability: "content"
@@ -241,24 +241,24 @@ const classifyFailure = (
   }
 
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status === 409) {
     if (body.name === "concurrent_idempotent_requests") {
-      return new RateLimited({ ...common, retryable: true })
+      return RateLimited.new({ ...common, retryable: true })
     }
-    return new IdempotencyConflict({
+    return IdempotencyConflict.new({
       ...common,
       ...(idempotencyKey === undefined ? {} : { idempotencyKey })
     })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const makeSendEmail = (
@@ -287,7 +287,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Resend request failed before a response was received; outcome is unknown",
             provider: "resend",
             cause
@@ -307,7 +307,7 @@ const makeSendEmail = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Resend returned an unreadable success response",
             provider: "resend",
             status: response.status,
@@ -319,7 +319,7 @@ const makeSendEmail = (
     const decoded = yield* Schema.decodeUnknownEffect(ResendSuccess)(body).pipe(
       Effect.mapError(
         (issue) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Resend success response did not contain a message id",
             provider: "resend",
             status: response.status,

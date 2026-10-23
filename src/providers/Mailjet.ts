@@ -178,7 +178,7 @@ const attachmentFor = (
 ): Effect.Effect<MailjetAttachment, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Mailjet adapter requires attachment bytes; remote and path sources are not supported",
         provider: "mailjet",
@@ -209,7 +209,7 @@ const payloadFor = (
 ): Effect.Effect<MailjetMessagePayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailjet adapter supports rendered content only, received ${message.content._tag}`,
         provider: "mailjet",
         capability: "content"
@@ -218,7 +218,7 @@ const payloadFor = (
   }
   if (message.subject.length > SUBJECT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailjet subjects are limited to ${SUBJECT_LIMIT} characters`,
         provider: "mailjet",
         capability: "subject-length"
@@ -227,7 +227,7 @@ const payloadFor = (
   }
   if (message.replyTo.length > 1) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Mailjet accepts at most one reply-to address",
         provider: "mailjet",
         capability: "reply-to"
@@ -318,15 +318,15 @@ const classifyStatus = (
     ...(requestId === undefined ? {} : { requestId })
   }
   if (status === 401 || status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const messageFailure = (
@@ -348,25 +348,25 @@ const messageFailure = (
       .join("; ") || `Mailjet returned status ${entry.Status ?? "unknown"}`
   const error =
     status === undefined
-      ? new ProviderRejected({
+      ? ProviderRejected.new({
           message: description,
           provider: "mailjet"
         })
       : status === 429
-        ? new RateLimited({
+        ? RateLimited.new({
             message: description,
             provider: "mailjet",
             status,
             retryable: true
           })
         : status >= 500
-          ? new TransportUnavailable({
+          ? TransportUnavailable.new({
               message: description,
               provider: "mailjet",
               status,
               retryable: true
             })
-          : new ProviderRejected({
+          : ProviderRejected.new({
               message: description,
               provider: "mailjet",
               status
@@ -403,7 +403,7 @@ const makeSendMessages = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Mailjet request failed before a response was received; outcome is unknown",
             provider: "mailjet",
             cause
@@ -426,7 +426,7 @@ const makeSendMessages = (
       return yield* classifyStatus(response.status, response)
     }
 
-    return yield* new MalformedProviderResponse({
+    return yield* MalformedProviderResponse.new({
       message: "Mailjet returned a success response without a Messages array",
       provider: "mailjet",
       status: response.status,
@@ -539,7 +539,7 @@ const makeTransport = (
           outcomes.push({
             _tag: "uncertain",
             index: entry.index,
-            error: new DeliveryUncertain({
+            error: DeliveryUncertain.new({
               message: "Mailjet response omitted this message",
               provider: "mailjet",
               status: 200
@@ -563,7 +563,7 @@ const makeTransport = (
           outcomes.push({
             _tag: "uncertain",
             index: entry.index,
-            error: new MalformedProviderResponse({
+            error: MalformedProviderResponse.new({
               message: "Mailjet accepted the message without a MessageUUID",
               provider: "mailjet",
               status: 200

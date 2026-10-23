@@ -198,7 +198,7 @@ const attachmentFor = (
 ): Effect.Effect<MailerSendAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "MailerSend does not accept remote attachment URLs",
         provider: "mailersend",
         capability: "remote-attachments"
@@ -207,7 +207,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "MailerSend adapter cannot read attachments from local paths; provide bytes instead",
         provider: "mailersend",
@@ -233,7 +233,7 @@ const payloadFor = (
 ): Effect.Effect<MailerSendPayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailerSend adapter supports rendered content only, received ${message.content._tag}`,
         provider: "mailersend",
         capability: "content"
@@ -243,7 +243,7 @@ const payloadFor = (
 
   if (message.cc.length > 10) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailerSend accepts at most 10 CC recipients, got ${message.cc.length}`,
         provider: "mailersend",
         capability: "cc-recipients"
@@ -252,7 +252,7 @@ const payloadFor = (
   }
   if (message.bcc.length > 10) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailerSend accepts at most 10 BCC recipients, got ${message.bcc.length}`,
         provider: "mailersend",
         capability: "bcc-recipients"
@@ -261,7 +261,7 @@ const payloadFor = (
   }
   if (message.tags.length > 5) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailerSend accepts at most 5 tags, got ${message.tags.length}`,
         provider: "mailersend",
         capability: "tags"
@@ -359,15 +359,15 @@ const classifyFailure = (
   }
 
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const execute = (
@@ -377,7 +377,7 @@ const execute = (
   client.execute(request).pipe(
     Effect.mapError(
       (cause) =>
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "MailerSend request failed before a response was received; outcome is unknown",
           provider: "mailersend",
           cause
@@ -420,7 +420,7 @@ const makeSendEmail = (
     ).pipe(Effect.orElseSucceed((): typeof MailerSendSuccess.Type => ({})))
     const id = headerId ?? decoded.message_id
     if (id === undefined || id.length === 0) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "MailerSend success response did not contain x-message-id",
         provider: "mailersend",
         status: response.status,
@@ -459,7 +459,7 @@ const makeSendBulk = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailerSend returned an unreadable bulk response",
             provider: "mailersend",
             status: response.status,
@@ -472,7 +472,7 @@ const makeSendBulk = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailerSend bulk response did not contain bulk_email_id",
             provider: "mailersend",
             status: response.status,
@@ -481,7 +481,7 @@ const makeSendBulk = (
       )
     )
     if (decoded.bulk_email_id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "MailerSend bulk response did not contain bulk_email_id",
         provider: "mailersend",
         status: response.status,
@@ -538,7 +538,7 @@ const makeRetrieveBulk = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailerSend returned an unreadable bulk status response",
             provider: "mailersend",
             status: response.status,
@@ -551,7 +551,7 @@ const makeRetrieveBulk = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailerSend bulk status response had an unexpected shape",
             provider: "mailersend",
             status: response.status,
@@ -594,7 +594,7 @@ const makeRetrieve = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailerSend returned an unreadable message status response",
             provider: "mailersend",
             status: response.status,
@@ -607,7 +607,7 @@ const makeRetrieve = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailerSend message status response had an unexpected shape",
             provider: "mailersend",
             status: response.status,
@@ -752,7 +752,7 @@ const makeTransport = (
     const id = receipt.providerMessageId
     if (id === undefined) {
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message: "MailerSend retrieval requires a provider message id",
           provider: "mailersend",
           capability: "retrieve"

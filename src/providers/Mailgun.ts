@@ -120,7 +120,7 @@ const attachmentFor = (
 ): Effect.Effect<PreparedAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Mailgun does not accept remote attachment URLs",
         provider: "mailgun",
         capability: "remote-attachments"
@@ -129,7 +129,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Mailgun adapter cannot read attachments from local paths; provide bytes instead",
         provider: "mailgun",
@@ -159,7 +159,7 @@ const attachmentFor = (
   })()
   if (bytes === undefined) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Mailgun attachment contains invalid base64 content",
         provider: "mailgun",
         capability: "attachments"
@@ -183,7 +183,7 @@ const formFor = (
 ): Effect.Effect<PreparedForm, TransportError> => {
   if (message.tags.length > TAG_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailgun accepts at most ${TAG_LIMIT} tags per message, got ${message.tags.length}`,
         provider: "mailgun",
         capability: "tags"
@@ -193,7 +193,7 @@ const formFor = (
   const longTag = message.tags.find((tag) => tag.length > TAG_LENGTH)
   if (longTag !== undefined) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailgun tags may be at most ${TAG_LENGTH} characters`,
         provider: "mailgun",
         capability: "tags"
@@ -204,7 +204,7 @@ const formFor = (
   const content = message.content
   if (content._tag !== "rendered" && content._tag !== "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailgun adapter does not support ${content._tag} content`,
         provider: "mailgun",
         capability: content._tag === "raw" ? "raw-mime" : "local-templates"
@@ -303,15 +303,15 @@ const classifyFailure = (
     ...(retryAfterMillis === undefined ? {} : { retryAfterMillis })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const makeSendForm = (
@@ -337,7 +337,7 @@ const makeSendForm = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Mailgun request failed before a response was received; outcome is unknown",
             provider: "mailgun",
             cause
@@ -351,7 +351,7 @@ const makeSendForm = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailgun returned an unreadable success response",
             provider: "mailgun",
             status: response.status,
@@ -364,7 +364,7 @@ const makeSendForm = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailgun success response did not contain a message id",
             provider: "mailgun",
             status: response.status,
@@ -373,7 +373,7 @@ const makeSendForm = (
       )
     )
     if (decoded.id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "Mailgun success response did not contain a message id",
         provider: "mailgun",
         status: response.status,

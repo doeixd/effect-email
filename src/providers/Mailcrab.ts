@@ -98,7 +98,7 @@ const execute = (
   client.execute(value).pipe(
     Effect.mapError(
       (cause) =>
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message: "Mailcrab request failed",
           provider: "mailcrab",
           retryable: true,
@@ -116,15 +116,15 @@ const failure = (
     status: response.status
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const json = (
@@ -144,7 +144,7 @@ const json = (
     return yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailcrab returned unreadable JSON",
             provider: "mailcrab",
             status: response.status,
@@ -264,7 +264,7 @@ export const makeClient = (
         return yield* response.text.pipe(
           Effect.mapError(
             (cause) =>
-              new MalformedProviderResponse({
+              MalformedProviderResponse.new({
                 message: "Mailcrab returned an unreadable raw message",
                 provider: "mailcrab",
                 status: response.status,
@@ -292,7 +292,7 @@ export const makeClient = (
           yield* response.arrayBuffer.pipe(
             Effect.mapError(
               (cause) =>
-                new MalformedProviderResponse({
+                MalformedProviderResponse.new({
                   message:
                     "Mailcrab returned unreadable attachment bytes",
                   provider: "mailcrab",

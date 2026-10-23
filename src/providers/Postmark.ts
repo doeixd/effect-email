@@ -144,7 +144,7 @@ const attachmentFor = (
 ): Effect.Effect<PostmarkAttachment, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Postmark adapter requires attachment bytes; remote and path sources are not supported",
         provider: "postmark",
@@ -176,7 +176,7 @@ const payloadFor = (
 ): Effect.Effect<PostmarkPayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Postmark adapter supports rendered content only, received ${message.content._tag}`,
         provider: "postmark",
         capability: "content"
@@ -259,15 +259,15 @@ const classifyFailure = (
   }
 
   if (status === 401 || status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const readErrorBody = (
@@ -316,7 +316,7 @@ const decodeResponse = (
   Schema.decodeUnknownEffect(PostmarkResponse)(body).pipe(
     Effect.mapError(
       (issue) =>
-        new MalformedProviderResponse({
+        MalformedProviderResponse.new({
           message: "Postmark returned a malformed response",
           provider: "postmark",
           cause: issue
@@ -335,7 +335,7 @@ const responseOutcome = (
       return {
         _tag: "uncertain",
         index,
-        error: new MalformedProviderResponse({
+        error: MalformedProviderResponse.new({
           message: "Postmark accepted a message without a MessageID",
           provider: "postmark",
           status: 200
@@ -381,7 +381,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Postmark request failed before a response was received; outcome is unknown",
             provider: "postmark",
             cause
@@ -396,7 +396,7 @@ const makeSendEmail = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Postmark returned an unreadable success response",
             provider: "postmark",
             status: response.status,
@@ -406,15 +406,13 @@ const makeSendEmail = (
     )
     const decoded = yield* decodeResponse(body)
     if (decoded.ErrorCode !== undefined && decoded.ErrorCode !== 0) {
-      return yield* Effect.fail(
-        classifyFailure(
-          decoded.ErrorCode,
-          decoded.Message ?? "Postmark rejected the message"
-        )
+      return yield* classifyFailure(
+        decoded.ErrorCode,
+        decoded.Message ?? "Postmark rejected the message"
       )
     }
     if (decoded.MessageID === undefined || decoded.MessageID.length === 0) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "Postmark success response did not contain a MessageID",
         provider: "postmark",
         status: response.status
@@ -447,7 +445,7 @@ const makeSendEmailBatch = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Postmark batch request failed before a response was received; outcome is unknown",
             provider: "postmark",
             cause
@@ -462,7 +460,7 @@ const makeSendEmailBatch = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Postmark returned an unreadable batch response",
             provider: "postmark",
             status: response.status,
@@ -475,7 +473,7 @@ const makeSendEmailBatch = (
     )(body).pipe(
       Effect.mapError(
         (issue) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Postmark batch response was malformed",
             provider: "postmark",
             status: response.status,
@@ -575,7 +573,7 @@ const makeTransport = (
           return {
             _tag: "uncertain" as const,
             index: entry.position,
-            error: new DeliveryUncertain({
+            error: DeliveryUncertain.new({
               message:
                 "Postmark batch response omitted this message; submission state is unknown",
               provider: "postmark",

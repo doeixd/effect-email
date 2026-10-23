@@ -143,7 +143,7 @@ const fileFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "SMTP2GO adapter cannot read attachments from local paths; provide bytes or a URL instead",
         provider: "smtp2go",
@@ -163,7 +163,7 @@ const payloadFor = (
 ): Effect.Effect<Smtp2goPayload, TransportError> => {
   if (message.to.length > RECIPIENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `SMTP2GO accepts at most ${RECIPIENT_LIMIT} to recipients, got ${message.to.length}`,
         provider: "smtp2go",
         capability: "recipients"
@@ -174,7 +174,7 @@ const payloadFor = (
   const content = message.content
   if (content._tag !== "rendered" && content._tag !== "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `SMTP2GO adapter does not support ${content._tag} content`,
         provider: "smtp2go",
         capability: content._tag === "raw" ? "raw-mime" : "local-templates"
@@ -299,15 +299,15 @@ const classifyFailure = (
     (body.data?.error_code !== undefined &&
       AUTH_ERROR_CODE.test(body.data.error_code))
   ) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const describeFailure = (failure: unknown): string => {
@@ -344,7 +344,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "SMTP2GO request failed before a response was received; outcome is unknown",
             provider: "smtp2go",
             cause
@@ -359,7 +359,7 @@ const makeSendEmail = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "SMTP2GO returned an unreadable success response",
             provider: "smtp2go",
             status: response.status,
@@ -372,7 +372,7 @@ const makeSendEmail = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "SMTP2GO returned an unreadable success response",
             provider: "smtp2go",
             status: response.status,
@@ -399,9 +399,9 @@ const makeSendEmail = (
           : { requestId: decoded.request_id })
       }
       if ((data.succeeded ?? 0) > 0) {
-        return yield* new DeliveryUncertain(common)
+        return yield* DeliveryUncertain.new(common)
       }
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         ...common,
         retryable: false
       })
@@ -409,7 +409,7 @@ const makeSendEmail = (
 
     const id = data.schedule_id ?? data.email_id
     if (id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "SMTP2GO success response did not contain email_id",
         provider: "smtp2go",
         status: response.status,

@@ -17,6 +17,10 @@
 - Typed event waits fail instead of looping when completed by a non-matching event.
 - Admission snapshots template drafts as well as template message inputs.
 - Gateway 5xx responses no longer echo internal/provider error messages.
+- Added the Effect Language Service configuration and `effect:diagnostics` script.
+- Schema error classes use the static `new` construction pattern so decoding
+  behavior is preserved while causes remain sanitized.
+- PostgreSQL example reads `DATABASE_URL` through `Config.Redacted`.
 - Fallback invokes the failover callback only after target validation.
 ## 0.3.0
 

@@ -10,7 +10,7 @@ export const checkCapabilities = (
   const capabilities = transport.capabilities
   const fail = (capability: string, detail: string) =>
     Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `${transport.destination.provider} does not support ${detail}`,
         provider: transport.destination.provider,
         capability

@@ -68,6 +68,7 @@
     "effect": "4.0.0-rc.118"
   },
   "devDependencies": {
+    "@effect/language-service": "0.87.5",
     "@effect/sql-pg": "4.0.0-rc.118",
     "@effect/sql-sqlite-node": "4.0.0-rc.118",
     "@effect/vitest": "4.0.0-rc.118",
@@ -113,6 +114,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "effect:diagnostics": "effect-language-service diagnostics --project tsconfig.json",
     "test": "vitest run",
     "build": "node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs",

@@ -102,7 +102,7 @@ describe("DeliveryStore", () => {
       yield* store.recordFailed(
         target,
         1,
-        new StoreUnavailable({ message: "failed" })
+        StoreUnavailable.new({ message: "failed" })
       )
       yield* store.appendProviderEvent({
         id: "event_prune",
@@ -237,7 +237,7 @@ describe("DeliveryStore", () => {
       yield* store.recordUncertain(
         uncertainId,
         1,
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "unknown",
           provider: "mock"
         })
@@ -400,7 +400,7 @@ describe("DeliveryStore", () => {
       yield* store.recordUncertain(
         id,
         1,
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "unknown",
           provider: "mock"
         })
@@ -433,7 +433,7 @@ describe("DeliveryStore", () => {
       yield* store.recordFailed(
         failed,
         1,
-        new StoreUnavailable({ message: "failed" })
+        StoreUnavailable.new({ message: "failed" })
       )
       const summary = yield* store.statusSummary
       const count = (status: string) =>

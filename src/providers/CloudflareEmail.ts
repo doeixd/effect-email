@@ -75,7 +75,7 @@ export const make = (
           envelope.message.content._tag === "raw" &&
           envelope.message.attachments.length > 0
         ) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message:
               "the Cloudflare Email Routing binding cannot attach files to raw MIME",
             provider: "cloudflare-email",
@@ -87,7 +87,7 @@ export const make = (
           envelope.message.cc.length > 0 ||
           envelope.message.bcc.length > 0
         ) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message:
               "the Cloudflare Email Routing binding accepts exactly one recipient",
             provider: "cloudflare-email",
@@ -109,7 +109,7 @@ export const make = (
               )
             ),
           catch: (cause) =>
-            new DeliveryUncertain({
+            DeliveryUncertain.new({
               message: "Cloudflare Email binding failed",
               provider: "cloudflare-email",
               cause

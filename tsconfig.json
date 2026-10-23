@@ -10,7 +10,8 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node"]
+    "types": ["node"],
+    "plugins": [{ "name": "@effect/language-service" }]
   },
   "include": ["src", "test", "examples/*.ts"]
 }

@@ -123,7 +123,7 @@ describe("SubmissionAdmission", () => {
           layersFor(client, {
             authorize: () =>
               Effect.fail(
-                new UnsupportedCapability({
+                UnsupportedCapability.new({
                   message: "not allowed",
                   capability: "authorization"
                 })

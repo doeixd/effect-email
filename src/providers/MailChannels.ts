@@ -180,7 +180,7 @@ const attachmentFor = (
 ): Effect.Effect<MailChannelsAttachment, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "MailChannels requires attachment bytes; provide content instead of a path or URL",
         provider: "mailchannels",
@@ -227,7 +227,7 @@ const sharedFor = (
 > => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailChannels adapter supports rendered content only, received ${message.content._tag}`,
         provider: "mailchannels",
         capability: "content"
@@ -238,7 +238,7 @@ const sharedFor = (
     message.to.length + message.cc.length + message.bcc.length
   if (recipients > RECIPIENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailChannels accepts at most ${RECIPIENT_LIMIT} recipients, got ${recipients}`,
         provider: "mailchannels",
         capability: "recipients"
@@ -247,7 +247,7 @@ const sharedFor = (
   }
   if (message.attachments.length > ATTACHMENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailChannels accepts at most ${ATTACHMENT_LIMIT} attachments, got ${message.attachments.length}`,
         provider: "mailchannels",
         capability: "attachments"
@@ -257,7 +257,7 @@ const sharedFor = (
   const campaign = campaignOf(message, options)
   if (campaign !== undefined && badCampaignId(campaign)) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `MailChannels campaign ids may be at most ${CAMPAIGN_ID_LIMIT} characters and contain no spaces`,
         provider: "mailchannels",
         capability: "tags"
@@ -313,7 +313,7 @@ const personalizationFor = (
 ): Effect.Effect<MailChannelsPersonalization, UnsupportedCapability> => {
   if (message.replyTo.length > 1) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "MailChannels accepts a single reply-to address",
         provider: "mailchannels",
         capability: "reply-to"
@@ -409,15 +409,15 @@ const classifyFailure = (
     ...(retryAfterMillis === undefined ? {} : { retryAfterMillis })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const makeSendEmail = (
@@ -443,7 +443,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message:
               "MailChannels request failed before a response was received; outcome is unknown",
             provider: "mailchannels",
@@ -457,7 +457,7 @@ const makeSendEmail = (
     const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailChannels returned unreadable JSON",
             provider: "mailchannels",
             status: response.status,
@@ -470,7 +470,7 @@ const makeSendEmail = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "MailChannels returned an unreadable response",
             provider: "mailchannels",
             status: response.status,
@@ -486,7 +486,7 @@ const makeSendEmail = (
       if (entry.status === "failed") {
         entries.push({
           index,
-          failure: new ProviderRejected({
+          failure: ProviderRejected.new({
             message: entry.reason ?? "MailChannels rejected the message",
             provider: "mailchannels",
             status: response.status,
@@ -497,7 +497,7 @@ const makeSendEmail = (
       } else if (entry.message_id === undefined) {
         entries.push({
           index,
-          failure: new DeliveryUncertain({
+          failure: DeliveryUncertain.new({
             message: "MailChannels returned no message id for this recipient",
             provider: "mailchannels",
             status: response.status,
@@ -515,7 +515,7 @@ const makeSendEmail = (
       if (!seen.has(index)) {
         entries.push({
           index,
-          failure: new DeliveryUncertain({
+          failure: DeliveryUncertain.new({
             message: "MailChannels returned no result for this message",
             provider: "mailchannels",
             status: response.status,
@@ -563,7 +563,7 @@ const makeTransport = (
     const entry = result.entries.find((candidate) => candidate.index === 0)
     if (entry?.messageId === undefined) {
       return yield* entry?.failure ??
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "MailChannels returned no result for the message",
           provider: "mailchannels"
         })
@@ -653,7 +653,7 @@ const makeTransport = (
           const outcome = byIndex.get(position)
           if (outcome?.messageId === undefined) {
             const error = outcome?.failure ??
-              new DeliveryUncertain({
+              DeliveryUncertain.new({
                 message: "MailChannels returned no result for this message",
                 provider: "mailchannels",
                 ...(result.success.requestId === undefined

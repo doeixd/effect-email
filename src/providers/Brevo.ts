@@ -172,7 +172,7 @@ const attachmentFor = (
 ): Effect.Effect<BrevoAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Brevo does not accept remote attachment URLs",
         provider: "brevo",
         capability: "remote-attachments"
@@ -181,7 +181,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Brevo adapter cannot read attachments from local paths; provide bytes instead",
         provider: "brevo",
@@ -217,7 +217,7 @@ const contentFor = (
     case "provider-template":
       if (!/^\d+$/.test(content.id)) {
         return Effect.fail(
-          new UnsupportedCapability({
+          UnsupportedCapability.new({
             message: `Brevo templates use numeric ids, received ${content.id}`,
             provider: "brevo",
             capability: "provider-templates"
@@ -232,7 +232,7 @@ const contentFor = (
       })
     default:
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message: `Brevo adapter does not support ${content._tag} content`,
           provider: "brevo",
           capability: content._tag === "raw" ? "raw-mime" : "local-templates"
@@ -246,7 +246,7 @@ const payloadFor = (
 ): Effect.Effect<BrevoPayload, TransportError> => {
   if (message.to.length > RECIPIENTS_PER_VERSION) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Brevo accepts at most ${RECIPIENTS_PER_VERSION} to recipients, got ${message.to.length}`,
         provider: "brevo",
         capability: "recipients"
@@ -382,15 +382,15 @@ const classifyFailure = (
     response.status === 403 ||
     (body.code !== undefined && AUTH_CODES.has(body.code))
   ) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const execute = (
@@ -400,7 +400,7 @@ const execute = (
   client.execute(request).pipe(
     Effect.mapError(
       (cause) =>
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "Brevo request failed before a response was received; outcome is unknown",
           provider: "brevo",
           cause
@@ -488,7 +488,7 @@ const makeSend = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Brevo returned an unreadable success response",
             provider: "brevo",
             status: response.status,
@@ -501,7 +501,7 @@ const makeSend = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Brevo success response did not contain a messageId",
             provider: "brevo",
             status: response.status,
@@ -511,7 +511,7 @@ const makeSend = (
     )
     const id = decoded.messageId ?? decoded.messageIds?.[0]
     if (id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "Brevo success response did not contain a messageId",
         provider: "brevo",
         status: response.status,
@@ -535,7 +535,7 @@ const makeSend = (
       const body = yield* response.json.pipe(
         Effect.mapError(
           (cause) =>
-            new MalformedProviderResponse({
+            MalformedProviderResponse.new({
               message: "Brevo returned an unreadable batch response",
               provider: "brevo",
               status: response.status,
@@ -548,7 +548,7 @@ const makeSend = (
       ).pipe(
         Effect.mapError(
           (cause) =>
-            new MalformedProviderResponse({
+            MalformedProviderResponse.new({
               message: "Brevo batch response did not contain messageIds",
               provider: "brevo",
               status: response.status,
@@ -589,7 +589,7 @@ const makeSend = (
     const body = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Brevo returned an unreadable status response",
             provider: "brevo",
             status: response.status,
@@ -602,7 +602,7 @@ const makeSend = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Brevo status response had an unexpected shape",
             provider: "brevo",
             status: response.status,
@@ -802,7 +802,7 @@ const makeTransport = (
               ? {
                   _tag: "uncertain",
                   index: entry.index,
-                  error: new MalformedProviderResponse({
+                  error: MalformedProviderResponse.new({
                     message:
                       "Brevo batch response did not contain an id for this message",
                     provider: "brevo"
@@ -829,7 +829,7 @@ const makeTransport = (
     const id = receipt.providerMessageId
     if (id === undefined) {
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message: "Brevo retrieval requires a provider message id",
           provider: "brevo",
           capability: "retrieve"
@@ -843,7 +843,7 @@ const makeTransport = (
     const id = receipt.providerMessageId
     if (id === undefined) {
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message: "Brevo cancellation requires a provider message id",
           provider: "brevo",
           capability: "cancel"

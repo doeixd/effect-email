@@ -60,13 +60,13 @@ const destinationOf = (input?: Partial<Destination>): Destination =>
   })
 
 const defaultRejection = (): TransportError =>
-  new ProviderRejected({
+  ProviderRejected.new({
     message: "scripted rejection",
     provider: "recording"
   })
 
 const defaultUncertainty = (): TransportError =>
-  new DeliveryUncertain({
+  DeliveryUncertain.new({
     message: "scripted uncertainty",
     provider: "recording"
   })

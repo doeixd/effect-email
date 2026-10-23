@@ -79,7 +79,7 @@ describe("Email.sendBatch native dispatch", () => {
         {
           _tag: "rejected",
           index: 1,
-          error: new ProviderRejected({
+          error: ProviderRejected.new({
             message: "mailbox rejected",
             provider: "native"
           })
@@ -171,7 +171,7 @@ describe("Email.sendBatch native dispatch", () => {
         ...transport,
         sendBatch: () =>
           Effect.fail(
-            new DeliveryUncertain({
+            DeliveryUncertain.new({
               message: "connection dropped after batch write",
               provider: "native"
             })

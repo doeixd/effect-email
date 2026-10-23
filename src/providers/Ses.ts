@@ -206,18 +206,18 @@ const classifyFailure = (
     type.includes("LimitExceededException") ||
     type.includes("TooManyRequestsException")
   ) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new DeliveryUncertain(common)
+    return DeliveryUncertain.new(common)
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const receiptFor = (
@@ -258,14 +258,14 @@ export const make = (
           envelope.message.cc.length +
           envelope.message.bcc.length
         if (recipients > 50) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message: `SES accepts at most 50 recipients, got ${recipients}`,
             provider: "ses",
             capability: "recipients"
           })
         }
         if (envelope.message.tags.length > 50) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message: "SES accepts at most 50 tags",
             provider: "ses",
             capability: "tags"
@@ -276,7 +276,7 @@ export const make = (
             (tag) => !/^[A-Za-z0-9_-]{1,256}$/.test(tag)
           )
         ) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message:
               "SES tags may contain only letters, digits, underscores, and hyphens",
             provider: "ses",
@@ -285,7 +285,7 @@ export const make = (
         }
         const mime = yield* buildMime(envelope.message)
         if (mime.byteLength > 10 * 1024 * 1024) {
-          return yield* new UnsupportedCapability({
+          return yield* UnsupportedCapability.new({
             message: "SES raw messages may not exceed 10 MiB",
             provider: "ses",
             capability: "message-size"
@@ -371,7 +371,7 @@ export const make = (
         const response = yield* client.execute(request).pipe(
           Effect.mapError(
             (cause) =>
-              new DeliveryUncertain({
+              DeliveryUncertain.new({
                 message: "SES request failed before a response",
                 provider: "ses",
                 cause
@@ -392,7 +392,7 @@ export const make = (
         const body = yield* response.json.pipe(
           Effect.mapError(
             (cause) =>
-              new MalformedProviderResponse({
+              MalformedProviderResponse.new({
                 message: "SES returned an unreadable response",
                 provider: "ses",
                 status: response.status,
@@ -405,7 +405,7 @@ export const make = (
         ).pipe(
           Effect.mapError(
             (cause) =>
-              new MalformedProviderResponse({
+              MalformedProviderResponse.new({
                 message: "SES response did not contain a MessageId",
                 provider: "ses",
                 status: response.status,
@@ -414,7 +414,7 @@ export const make = (
           )
         )
         if (decoded.MessageId === undefined) {
-          return yield* new MalformedProviderResponse({
+          return yield* MalformedProviderResponse.new({
             message: "SES response did not contain a MessageId",
             provider: "ses",
             status: response.status,

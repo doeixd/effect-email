@@ -199,7 +199,7 @@ const attachmentFor = (
 ): Effect.Effect<ZeptomailAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "ZeptoMail does not accept remote attachment URLs",
         provider: "zeptomail",
         capability: "remote-attachments"
@@ -208,7 +208,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "ZeptoMail adapter cannot read attachments from local paths; provide bytes instead",
         provider: "zeptomail",
@@ -236,7 +236,7 @@ const sharedFor = (
 > => {
   if (message.to.length > RECIPIENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `ZeptoMail accepts at most ${RECIPIENT_LIMIT} to recipients, got ${message.to.length}`,
         provider: "zeptomail",
         capability: "recipients"
@@ -245,7 +245,7 @@ const sharedFor = (
   }
   if (message.attachments.length > ATTACHMENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `ZeptoMail accepts at most ${ATTACHMENT_LIMIT} attachments, got ${message.attachments.length}`,
         provider: "zeptomail",
         capability: "attachments"
@@ -254,7 +254,7 @@ const sharedFor = (
   }
   if (message.subject.length > SUBJECT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `ZeptoMail accepts subjects up to ${SUBJECT_LIMIT} characters`,
         provider: "zeptomail",
         capability: "subject"
@@ -265,7 +265,7 @@ const sharedFor = (
   const content = message.content
   if (content._tag !== "rendered" && content._tag !== "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `ZeptoMail adapter does not support ${content._tag} content`,
         provider: "zeptomail",
         capability: content._tag === "raw" ? "raw-mime" : "local-templates"
@@ -406,27 +406,27 @@ const classifyFailure = (
   }
 
   if (detail?.code !== undefined && AUTH_DETAIL_CODES.has(detail.code)) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (detail?.code !== undefined && RATE_DETAIL_CODES.has(detail.code)) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (detail?.code !== undefined && EXHAUSTED_DETAIL_CODES.has(detail.code)) {
-    return new ProviderRejected({ ...common, retryable: false })
+    return ProviderRejected.new({ ...common, retryable: false })
   }
   if (error?.code !== undefined && INVALID_CODES.has(error.code)) {
-    return new ProviderRejected({ ...common, retryable: false })
+    return ProviderRejected.new({ ...common, retryable: false })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const makeSend = (
@@ -453,7 +453,7 @@ const makeSend = (
     return client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "ZeptoMail request failed before a response was received; outcome is unknown",
             provider: "zeptomail",
             cause
@@ -472,7 +472,7 @@ const makeSend = (
       const raw = yield* response.json.pipe(
         Effect.mapError(
           (cause) =>
-            new MalformedProviderResponse({
+            MalformedProviderResponse.new({
               message: "ZeptoMail returned an unreadable success response",
               provider: "zeptomail",
               status: response.status,
@@ -483,7 +483,7 @@ const makeSend = (
       const body = yield* Schema.decodeUnknownEffect(ZeptomailSuccess)(raw).pipe(
         Effect.mapError(
           (cause) =>
-            new MalformedProviderResponse({
+            MalformedProviderResponse.new({
               message: "ZeptoMail returned an unreadable success response",
               provider: "zeptomail",
               status: response.status,
@@ -492,7 +492,7 @@ const makeSend = (
         )
       )
       if (body.request_id === undefined) {
-        return yield* new MalformedProviderResponse({
+        return yield* MalformedProviderResponse.new({
           message: "ZeptoMail response did not contain a request_id",
           provider: "zeptomail",
           status: response.status,

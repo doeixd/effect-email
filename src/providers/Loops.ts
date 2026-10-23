@@ -113,7 +113,7 @@ const attachmentFor = (
 ): Effect.Effect<LoopsAttachment, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Loops requires attachment bytes; provide content instead of a path or URL",
         provider: "loops",
@@ -194,15 +194,15 @@ const classifyFailure = (
     ...(retryAfterMillis === undefined ? {} : { retryAfterMillis })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const validate = (
@@ -214,7 +214,7 @@ const validate = (
 > => {
   if (transactionalId === undefined) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Loops sends a transactional email by id; set providerTemplate.id or the Loops transactionalId option",
         provider: "loops",
@@ -224,7 +224,7 @@ const validate = (
   }
   if (message.content._tag !== "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Loops renders the transactional email it stores; use providerTemplate content",
         provider: "loops",
@@ -234,7 +234,7 @@ const validate = (
   }
   if (message.to.length !== 1) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Loops sends to exactly one recipient per call, got ${message.to.length}`,
         provider: "loops",
         capability: "recipients"
@@ -247,7 +247,7 @@ const validate = (
     message.replyTo.length > 0
   ) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Loops does not carry cc, bcc or reply-to; set them on the stored email",
         provider: "loops",
@@ -257,7 +257,7 @@ const validate = (
   }
   if (message.headers.length > 0) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Loops does not carry custom headers",
         provider: "loops",
         capability: "headers"
@@ -329,7 +329,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Loops request failed before a response was received; outcome is unknown",
             provider: "loops",
             cause
@@ -342,7 +342,7 @@ const makeSendEmail = (
     const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Loops returned an unreadable success response",
             provider: "loops",
             status: response.status,
@@ -353,7 +353,7 @@ const makeSendEmail = (
     const body = yield* Schema.decodeUnknownEffect(LoopsSuccess)(raw).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Loops returned an unreadable success response",
             provider: "loops",
             status: response.status,
@@ -362,7 +362,7 @@ const makeSendEmail = (
       )
     )
     if (body.success === false) {
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         message: messageOf(body) ?? "Loops rejected the send",
         provider: "loops",
         status: response.status,
@@ -403,7 +403,7 @@ const makeTransport = (
       envelope.providerIdempotencyKey !== undefined &&
       envelope.providerIdempotencyKey.length > IDEMPOTENCY_KEY_LIMIT
     ) {
-      return yield* new UnsupportedCapability({
+      return yield* UnsupportedCapability.new({
         message: `Loops accepts at most ${IDEMPOTENCY_KEY_LIMIT} characters for an idempotency key`,
         provider: "loops",
         capability: "idempotency"

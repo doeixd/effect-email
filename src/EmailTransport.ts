@@ -214,7 +214,7 @@ export const withRetry =
                 slot.index,
                 failureOutcome(
                   slot.index,
-                  new DeliveryUncertain({
+                  DeliveryUncertain.new({
                     message:
                       "provider batch response omitted this message",
                     provider: transport.destination.provider
@@ -300,7 +300,7 @@ const unsupportedReceiptOperation = (
   receipt: SubmissionReceipt,
   capability: "retrieve" | "cancel"
 ): UnsupportedCapability =>
-  new UnsupportedCapability({
+  UnsupportedCapability.new({
     message: `destination does not support ${capability}: ${receipt.destinationId}`,
     provider: receipt.provider,
     capability
@@ -437,7 +437,7 @@ export const withRateLimit =
         }
         if (tokens > window.limit) {
           return Effect.fail(
-            new UnsupportedCapability({
+            UnsupportedCapability.new({
               message: `${name} rate limit (${window.limit}) is smaller than the requested ${tokens}`,
               provider: transport.destination.provider,
               capability: `rate-limit:${name}`
@@ -454,7 +454,7 @@ export const withRateLimit =
           Effect.asVoid,
           Effect.mapError(
             (cause) =>
-              new TransportUnavailable({
+              TransportUnavailable.new({
                 message: `rate limiter failed for ${name}`,
                 provider: transport.destination.provider,
                 retryable: true,
@@ -612,7 +612,7 @@ export const withCircuitBreaker =
           }
         )
         if (decision.kind === "blocked") {
-          return yield* new TransportUnavailable({
+          return yield* TransportUnavailable.new({
             message: "circuit breaker is open",
             provider: transport.destination.provider,
             retryable: true,
@@ -896,7 +896,9 @@ export const withTee = (
   secondaries: ReadonlyArray<Transport>,
   options: TeeOptions = {}
 ): TeeTransport => {
-  const tee = Effect.fnUntraced(function* (envelope) {
+  const tee = Effect.fnUntraced(function* (
+    envelope: PreparedEnvelope
+  ) {
     const primaryResult = yield* Effect.result(primary.send(envelope))
     if (primaryResult._tag === "Failure") {
       return yield* primaryResult.failure

@@ -108,7 +108,7 @@ describe("DeliveryStore SQL", () => {
       yield* store.recordUncertain(
         uncertainId,
         1,
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "unknown",
           provider: "mock"
         })
@@ -136,7 +136,7 @@ describe("DeliveryStore SQL", () => {
       yield* store.recordFailed(
         id,
         1,
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message: "failed",
           provider: "mock"
         })
@@ -176,7 +176,7 @@ describe("DeliveryStore SQL", () => {
       yield* store.recordUncertain(
         ids[0]!,
         1,
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "unknown",
           provider: "mock"
         })
@@ -330,7 +330,7 @@ describe("DeliveryStore SQL", () => {
         yield* store.recordDeferred(
           id,
           1,
-          new TransportUnavailable({
+          TransportUnavailable.new({
             message: "retry",
             provider: "mock",
             retryable: true

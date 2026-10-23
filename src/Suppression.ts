@@ -83,7 +83,7 @@ const normalizeError = (cause: unknown): StoreUnavailable =>
     cause !== null &&
     "_tag" in cause)
     ? (cause as StoreUnavailable)
-    : new StoreUnavailable({
+    : StoreUnavailable.new({
         message: "suppression store operation failed",
         cause
       })

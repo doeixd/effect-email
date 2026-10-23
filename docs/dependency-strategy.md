@@ -32,6 +32,19 @@ Do not mechanically switch to `peerDependencies`. First verify:
 4. Node HTTP/SMTP bindings work on the supported Node versions.
 5. CI covers the lowest and highest supported ranges.
 
+## Effect Language Service
+
+`@effect/language-service` is installed as a development dependency and enabled
+in `tsconfig.json`. Run:
+
+```sh
+bun run effect:diagnostics
+```
+
+CI should keep this at zero errors. The current baseline has two informational
+`Effect.succeed(undefined)` suggestions where the return type intentionally
+includes `undefined`.
+
 ## Tarball smoke
 
 Before release:

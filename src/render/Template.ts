@@ -88,7 +88,7 @@ const failure = (
   message: string,
   cause?: unknown
 ): TemplateError =>
-  new TemplateError({
+  TemplateError.new({
     message,
     templateId: content.id,
     ...(content.version === undefined ? {} : { version: content.version }),

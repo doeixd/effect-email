@@ -69,7 +69,7 @@ export const explain = (
         candidate.route !== options.route
       ) {
         reasons.push(
-          new UnsupportedCapability({
+          UnsupportedCapability.new({
             message: `route ${candidate.route ?? "default"} is outside the explicit route ${options.route}`,
             provider: candidate.transport.destination.provider,
             capability: "route"

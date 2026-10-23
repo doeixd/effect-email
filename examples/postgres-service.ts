@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Redacted } from "effect"
+import { Config, Effect, Layer, Option } from "effect"
 import { PgClient } from "@effect/sql-pg"
 import * as DeliveryStoreSql from "../src/DeliveryStoreSql"
 import * as Email from "../src/Email"
@@ -8,23 +8,18 @@ import * as Submissions from "../src/queue/Submissions"
 import * as Service from "../src/Service"
 import * as SubmissionAdmission from "../src/SubmissionAdmission"
 
-const url = process.env.DATABASE_URL
-if (url === undefined) {
-  console.error("DATABASE_URL is required")
-  process.exit(1)
-}
-
 const tenant = tenantId("tenant_service")
 const delivery = deliveryId("dlv_service_demo")
 
 const program = Effect.gen(function* () {
+  const databaseUrl = yield* Config.Redacted("DATABASE_URL")
   const client = yield* Mock.makeClient()
   const base = Layer.mergeAll(
     DeliveryStoreSql.layerSql(),
     Submissions.layerFactorySql()
   ).pipe(
     Layer.provideMerge(
-      PgClient.layer({ url: Redacted.make(url) })
+      PgClient.layer({ url: databaseUrl })
     )
   )
   const emailLayer = yield* Email.layerValidated({

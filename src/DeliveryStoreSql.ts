@@ -71,7 +71,7 @@ const normalizeError = (cause: unknown): StoreUnavailable =>
     cause !== null &&
     "_tag" in cause)
     ? (cause as StoreUnavailable)
-    : new StoreUnavailable({
+    : StoreUnavailable.new({
         message: "SQL delivery store operation failed",
         cause
       })
@@ -302,7 +302,7 @@ export const layerSql = (
                 }
                 const current = yield* selectIntent(deliveryId)
                 if (current[0] === undefined) {
-                  return yield* new StoreUnavailable({
+                  return yield* StoreUnavailable.new({
                     message: `delivery intent not found after conflict: ${deliveryId}`
                   })
                 }
@@ -459,7 +459,7 @@ export const layerSql = (
             (intent, now) =>
               intent.status === "uncertain" &&
               options?.acknowledgeDuplicateRisk !== true
-                ? new StoreUnavailable({
+                ? StoreUnavailable.new({
                     message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
                   })
                 : Transitions.redrive(intent, now, options),

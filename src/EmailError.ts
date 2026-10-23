@@ -50,8 +50,8 @@ export class AuthenticationFailed extends Schema.TaggedError<AuthenticationFaile
   "AuthenticationFailed",
   transportFields
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -59,8 +59,8 @@ export class RateLimited extends Schema.TaggedError<RateLimited>()(
   "RateLimited",
   transportFields
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -68,8 +68,8 @@ export class ProviderRejected extends Schema.TaggedError<ProviderRejected>()(
   "ProviderRejected",
   transportFields
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -77,8 +77,8 @@ export class TransportUnavailable extends Schema.TaggedError<TransportUnavailabl
   "TransportUnavailable",
   transportFields
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -86,8 +86,8 @@ export class DeliveryUncertain extends Schema.TaggedError<DeliveryUncertain>()(
   "DeliveryUncertain",
   transportFields
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -95,8 +95,8 @@ export class MalformedProviderResponse extends Schema.TaggedError<MalformedProvi
   "MalformedProviderResponse",
   transportFields
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -107,8 +107,8 @@ export class UnsupportedCapability extends Schema.TaggedError<UnsupportedCapabil
     capability: Schema.String
   }
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -119,8 +119,8 @@ export class IdempotencyConflict extends Schema.TaggedError<IdempotencyConflict>
     idempotencyKey: Schema.optionalKey(Schema.String)
   }
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -133,8 +133,8 @@ export class TemplateError extends Schema.TaggedError<TemplateError>()(
     cause: Schema.optionalKey(SafeCause)
   }
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 
@@ -151,8 +151,8 @@ export class StoreUnavailable extends Schema.TaggedError<StoreUnavailable>()(
     cause: Schema.optionalKey(SafeCause)
   }
 ) {
-  constructor(props: any) {
-    super({ ...props, cause: sanitizeCause(props.cause) })
+  static new(props: any) {
+    return new this({ ...props, cause: sanitizeCause(props.cause) })
   }
 }
 

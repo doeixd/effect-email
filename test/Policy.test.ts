@@ -20,7 +20,7 @@ const message = {
 } as const
 
 const unavailable = () =>
-  new TransportUnavailable({
+  TransportUnavailable.new({
     message: "temporary outage",
     provider: "recording",
     retryable: true
@@ -87,7 +87,7 @@ describe("EmailTransport.withRetry", () => {
         script: [
           {
             type: "uncertain",
-            error: new DeliveryUncertain({
+            error: DeliveryUncertain.new({
               message: "connection dropped after write",
               provider: "recording"
             })
@@ -235,7 +235,7 @@ describe("EmailTransport.withRetry native batch", () => {
           Effect.suspend(() => {
             calls += 1
             return Effect.fail(
-              new DeliveryUncertain({
+              DeliveryUncertain.new({
                 message: "outcome unknown",
                 provider: "recording"
               })
@@ -375,7 +375,7 @@ describe("EmailTransport.withFallback", () => {
         script: [
           {
             type: "rejected",
-            error: new UnsupportedCapability({
+            error: UnsupportedCapability.new({
               message: "no tags",
               provider: "primary",
               capability: "tags"

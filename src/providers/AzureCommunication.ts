@@ -93,7 +93,7 @@ const resolveCredentials = (
     const parsed = parseConnectionString(options.connectionString)
     return parsed === undefined
       ? Effect.fail(
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "invalid Azure Communication connection string",
             provider: "azure-communication"
           })
@@ -107,7 +107,7 @@ const resolveCredentials = (
     })
   }
   return Effect.fail(
-    new MalformedProviderResponse({
+    MalformedProviderResponse.new({
       message:
         "Azure Communication requires connectionString or endpoint + accessKey",
       provider: "azure-communication"
@@ -150,7 +150,7 @@ const attachmentFor = (attachment: PreparedMessage["attachments"][number]) => {
   switch (attachment.source._tag) {
     case "path":
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message:
             "Azure Communication cannot read attachments from local paths",
           provider: "azure-communication",
@@ -159,7 +159,7 @@ const attachmentFor = (attachment: PreparedMessage["attachments"][number]) => {
       )
     case "url":
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message:
             "Azure Communication does not fetch remote attachment URLs",
           provider: "azure-communication",
@@ -188,7 +188,7 @@ const payloadFor = (
 ): Effect.Effect<unknown, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Azure Communication requires rendered text or HTML content",
         provider: "azure-communication",
@@ -253,7 +253,7 @@ const sha256Base64 = (
       return Base64.encode(new Uint8Array(digest))
     },
     catch: (cause) =>
-      new TransportUnavailable({
+      TransportUnavailable.new({
         message: "Azure Communication hashing failed",
         provider: "azure-communication",
         cause
@@ -281,7 +281,7 @@ const hmacBase64 = (
       return Base64.encode(new Uint8Array(signature))
     },
     catch: (cause) =>
-      new TransportUnavailable({
+      TransportUnavailable.new({
         message: "Azure Communication signing failed",
         provider: "azure-communication",
         cause
@@ -351,18 +351,18 @@ const failure = (
       code
     )
   ) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (
     response.status === 429 ||
     /TooManyRequests|Throttl|QuotaExceeded/i.test(code)
   ) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const readError = (
@@ -450,7 +450,7 @@ export const make = (
         const response = yield* client.execute(request).pipe(
           Effect.mapError(
             (cause) =>
-              new DeliveryUncertain({
+              DeliveryUncertain.new({
                 message:
                   "Azure Communication request failed before a response",
                 provider: "azure-communication",
@@ -465,7 +465,7 @@ export const make = (
         const parsed = yield* response.json.pipe(
           Effect.mapError(
             (cause) =>
-              new MalformedProviderResponse({
+              MalformedProviderResponse.new({
                 message:
                   "Azure Communication returned an unreadable response",
                 provider: "azure-communication",
@@ -480,7 +480,7 @@ export const make = (
           operationIdFrom(location) ??
           id
         if (responseId === undefined) {
-          return yield* new MalformedProviderResponse({
+          return yield* MalformedProviderResponse.new({
             message:
               "Azure Communication response carried no operation id",
             provider: "azure-communication",
@@ -510,7 +510,7 @@ export const make = (
     const retrieve: NonNullable<Transport["retrieve"]> = (receipt) => {
       if (receipt.providerMessageId === undefined) {
         return Effect.fail(
-          new UnsupportedCapability({
+          UnsupportedCapability.new({
             message:
               "Azure Communication retrieval requires an operation id",
             provider: "azure-communication",
@@ -537,7 +537,7 @@ export const make = (
         const response = yield* client.execute(request).pipe(
           Effect.mapError(
             (cause) =>
-              new DeliveryUncertain({
+              DeliveryUncertain.new({
                 message:
                   "Azure Communication status request failed",
                 provider: "azure-communication",
@@ -552,7 +552,7 @@ export const make = (
         const parsed = yield* response.json.pipe(
           Effect.mapError(
             (cause) =>
-              new MalformedProviderResponse({
+              MalformedProviderResponse.new({
                 message:
                   "Azure Communication returned unreadable status",
                 provider: "azure-communication",

@@ -364,7 +364,7 @@ describe("Gateway", () => {
       const handler = Gateway.make({
         authorize: () =>
           Effect.fail(
-            new UnsupportedCapability({
+            UnsupportedCapability.new({
               message: "not authorized",
               capability: "authorization"
             })

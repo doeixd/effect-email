@@ -15,7 +15,7 @@ describe("RetryDecision", () => {
   it.effect("reconciles uncertain outcomes regardless of budget", () =>
     Effect.sync(() => {
       const decision = decideRetry(
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "outcome unknown",
           provider: "test"
         }),
@@ -32,7 +32,7 @@ describe("RetryDecision", () => {
         new InvalidMessage({ message: "invalid" })
       )
       const unsupported = decideRetry(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message: "unsupported",
           capability: "attachments"
         })
@@ -53,14 +53,14 @@ describe("RetryDecision", () => {
   it.effect("retries transient and rate-limited failures", () =>
     Effect.sync(() => {
       const transient = decideRetry(
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message: "temporary",
           provider: "test",
           retryable: true
         })
       )
       const limited = decideRetry(
-        new RateLimited({
+        RateLimited.new({
           message: "slow down",
           provider: "test",
           retryAfterMillis: 750
@@ -77,7 +77,7 @@ describe("RetryDecision", () => {
   it.effect("retries only explicitly retryable rejections", () =>
     Effect.sync(() => {
       const retryable = decideRetry(
-        new ProviderRejected({
+        ProviderRejected.new({
           message: "try later",
           provider: "test",
           status: 503,
@@ -85,7 +85,7 @@ describe("RetryDecision", () => {
         })
       )
       const permanent = decideRetry(
-        new ProviderRejected({
+        ProviderRejected.new({
           message: "bad request",
           provider: "test",
           status: 400,
@@ -101,7 +101,7 @@ describe("RetryDecision", () => {
   it.effect("stops when the attempt budget is exhausted", () =>
     Effect.sync(() => {
       const decision = decideRetry(
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message: "temporary",
           provider: "test",
           retryable: true
@@ -116,7 +116,7 @@ describe("RetryDecision", () => {
   it.effect("uses the default delay and honors a custom predicate", () =>
     Effect.sync(() => {
       const defaultDelay = decideRetry(
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message: "temporary",
           provider: "test",
           retryable: true

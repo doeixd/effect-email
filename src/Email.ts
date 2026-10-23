@@ -331,7 +331,7 @@ const makeRetrieve = (
   Effect.fn("Email.retrieve")(function* (receipt) {
     const transport = transportForReceipt(routes, receipt)
     if (transport?.retrieve === undefined) {
-      return yield* new UnsupportedCapability({
+      return yield* UnsupportedCapability.new({
         message: `destination does not support retrieval: ${receipt.destinationId}`,
         provider: receipt.provider,
         capability: "retrieve"
@@ -346,7 +346,7 @@ const makeCancel = (
   Effect.fn("Email.cancel")(function* (receipt) {
     const transport = transportForReceipt(routes, receipt)
     if (transport?.cancel === undefined) {
-      return yield* new UnsupportedCapability({
+      return yield* UnsupportedCapability.new({
         message: `destination does not support cancellation: ${receipt.destinationId}`,
         provider: receipt.provider,
         capability: "cancel"
@@ -380,7 +380,7 @@ const makeSend = (
     const selectedRoute = options.route ?? defaultRoute
     const transport = routes.get(selectedRoute)
     if (transport === undefined) {
-      return yield* new UnsupportedCapability({
+      return yield* UnsupportedCapability.new({
         message: `unknown email route: ${selectedRoute}`,
         capability: "route"
       })
@@ -436,7 +436,7 @@ const missingOutcome = (
 ): MessageOutcome => ({
   _tag: "uncertain",
   index,
-  error: new DeliveryUncertain({
+  error: DeliveryUncertain.new({
     message: "provider batch response omitted this message",
     provider
   })

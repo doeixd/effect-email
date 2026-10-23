@@ -128,7 +128,7 @@ const execute = (
   client.execute(value).pipe(
     Effect.mapError(
       (cause) =>
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message: "Mailpit request failed",
           provider: "mailpit",
           retryable: true,
@@ -146,15 +146,15 @@ const failure = (
     status: response.status
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const readJson = (
@@ -163,7 +163,7 @@ const readJson = (
   response.json.pipe(
     Effect.mapError(
       (cause) =>
-        new MalformedProviderResponse({
+        MalformedProviderResponse.new({
           message: "Mailpit returned unreadable JSON",
           provider: "mailpit",
           status: response.status,
@@ -314,7 +314,7 @@ export const makeClient = (
         return yield* response.text.pipe(
           Effect.mapError(
             (cause) =>
-              new MalformedProviderResponse({
+              MalformedProviderResponse.new({
                 message: "Mailpit returned an unreadable raw message",
                 provider: "mailpit",
                 status: response.status,
@@ -342,7 +342,7 @@ export const makeClient = (
           yield* response.arrayBuffer.pipe(
             Effect.mapError(
               (cause) =>
-                new MalformedProviderResponse({
+                MalformedProviderResponse.new({
                   message:
                     "Mailpit returned unreadable attachment bytes",
                   provider: "mailpit",

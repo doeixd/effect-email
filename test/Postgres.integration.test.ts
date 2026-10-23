@@ -50,7 +50,7 @@ describe("PostgreSQL integration", () => {
                 deliveryId: delivery,
                 dispatchGeneration: 1
               })
-              return yield* new StoreUnavailable({
+              return yield* StoreUnavailable.new({
                 message: "rollback"
               })
             })

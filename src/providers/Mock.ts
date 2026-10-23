@@ -91,14 +91,14 @@ const failureFor = (failure: MockFailure | true): TransportError => {
   }
   switch (spec.code) {
     case "NETWORK":
-      return new TransportUnavailable({ ...common, retryable: true })
+      return TransportUnavailable.new({ ...common, retryable: true })
     case "AUTH":
-      return new AuthenticationFailed(common)
+      return AuthenticationFailed.new(common)
     case "RATE_LIMIT":
-      return new RateLimited({ ...common, retryable: true })
+      return RateLimited.new({ ...common, retryable: true })
     case "PROVIDER":
     case undefined:
-      return new ProviderRejected(common)
+      return ProviderRejected.new(common)
   }
 }
 

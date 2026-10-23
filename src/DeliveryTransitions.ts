@@ -43,7 +43,7 @@ export const fingerprintOf = (input: CreateDeliveryIntent): string =>
   )
 
 export const missingIntent = (deliveryId: DeliveryId): StoreUnavailable =>
-  new StoreUnavailable({
+  StoreUnavailable.new({
     message: `delivery intent not found: ${deliveryId}`
   })
 
@@ -51,7 +51,7 @@ export const staleGeneration = (
   deliveryId: DeliveryId,
   generation: number
 ): StoreUnavailable =>
-  new StoreUnavailable({
+  StoreUnavailable.new({
     message: `stale dispatch generation ${generation} for ${deliveryId}`
   })
 
@@ -93,14 +93,14 @@ export const existingIntent = (
 ): DeliveryIntent | IdempotencyConflict =>
   existing.fingerprint === fingerprintOf(input)
     ? existing
-    : new IdempotencyConflict({
+    : IdempotencyConflict.new({
         message: `delivery ${existing.deliveryId} already exists with different content`,
         provider: "delivery-store",
         idempotencyKey: existing.deliveryId
       })
 
 const claimLost = (deliveryId: DeliveryId): StoreUnavailable =>
-  new StoreUnavailable({
+  StoreUnavailable.new({
     message: `delivery claim was lost or superseded: ${deliveryId}`
   })
 
@@ -190,14 +190,14 @@ export const beginAttempt = (
     intent.status === "bounced" ||
     intent.status === "complained"
   ) {
-    return new StoreUnavailable({
+    return StoreUnavailable.new({
       message: `delivery is already terminal: ${intent.deliveryId}`
     })
   }
   if (intent.claimExpiresAt !== undefined) {
     const expiresAt = DateTime.toEpochMillis(intent.claimExpiresAt)
     const current = DateTime.toEpochMillis(now)
-    return new StoreUnavailable({
+    return StoreUnavailable.new({
       message:
         expiresAt > current
           ? `delivery already has an active claim: ${intent.deliveryId}`

@@ -141,7 +141,7 @@ const attachmentFor = (
 ): Effect.Effect<ScalewayAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Scaleway does not accept remote attachment URLs",
         provider: "scaleway",
         capability: "remote-attachments"
@@ -150,7 +150,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Scaleway adapter cannot read attachments from local paths; provide bytes instead",
         provider: "scaleway",
@@ -160,7 +160,7 @@ const attachmentFor = (
   }
   if (attachment.contentType === undefined) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Scaleway attachments require an explicit contentType",
         provider: "scaleway",
@@ -185,7 +185,7 @@ const payloadFor = (
 ): Effect.Effect<ScalewayPayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Scaleway adapter supports rendered content only, received ${message.content._tag}`,
         provider: "scaleway",
         capability: "content"
@@ -194,7 +194,7 @@ const payloadFor = (
   }
   if (message.attachments.length > ATTACHMENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Scaleway accepts at most ${ATTACHMENT_LIMIT} attachments, got ${message.attachments.length}`,
         provider: "scaleway",
         capability: "attachments"
@@ -285,20 +285,20 @@ const classifyFailure = (
   }
 
   if (body.type === "quotas_exceeded") {
-    return new RateLimited({
+    return RateLimited.new({
       ...common,
       retryable: false,
       message: body.message ?? "quota exceeded"
     })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
 
   const details = (body.details ?? [])
@@ -306,7 +306,7 @@ const classifyFailure = (
       [detail.argument_name, detail.reason].filter(Boolean).join(" ")
     )
     .filter((part) => part.length > 0)
-  return new ProviderRejected({
+  return ProviderRejected.new({
     ...common,
     message:
       details.length === 0
@@ -322,7 +322,7 @@ const execute = (
   client.execute(request).pipe(
     Effect.mapError(
       (cause) =>
-        new DeliveryUncertain({
+        DeliveryUncertain.new({
           message: "Scaleway request failed before a response was received; outcome is unknown",
           provider: "scaleway",
           cause
@@ -340,7 +340,7 @@ const makeSendEmail = (
     const body = JSON.stringify(payload)
     const size = new TextEncoder().encode(body).byteLength
     if (size > MAX_EMAIL_BYTES) {
-      return yield* new UnsupportedCapability({
+      return yield* UnsupportedCapability.new({
         message: `Scaleway accepts at most ${MAX_EMAIL_BYTES} bytes per email, got ${size}`,
         provider: "scaleway",
         capability: "message-size"
@@ -372,7 +372,7 @@ const makeSendEmail = (
     const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Scaleway returned an unreadable success response",
             provider: "scaleway",
             status: response.status,
@@ -385,7 +385,7 @@ const makeSendEmail = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Scaleway returned an unreadable success response",
             provider: "scaleway",
             status: response.status,
@@ -395,7 +395,7 @@ const makeSendEmail = (
     )
     const id = decoded.emails?.[0]?.id
     if (id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "Scaleway success response did not contain an email id",
         provider: "scaleway",
         status: response.status,

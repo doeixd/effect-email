@@ -156,7 +156,7 @@ export const layerWaitForDeliveryEvent =
         if (matching !== undefined) {
           return matching.type
         }
-        return yield* new StoreUnavailable({
+        return yield* StoreUnavailable.new({
           message: `delivery event wait completed by non-matching event: ${type}`
         })
       }

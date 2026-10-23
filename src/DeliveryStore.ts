@@ -574,7 +574,7 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
               options?.acknowledgeDuplicateRisk !== true
             ) {
               return [
-                new StoreUnavailable({
+                StoreUnavailable.new({
                   message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
                 }),
                 intents

@@ -63,7 +63,7 @@ describe("Email", () => {
           headers: { authorization: "Bearer super-secret" }
         }
       })
-      const error = new TransportUnavailable({
+      const error = TransportUnavailable.new({
         message: "transport failed",
         provider: "test",
         cause
@@ -131,7 +131,7 @@ describe("Email", () => {
         script: [
           {
             type: "rejected",
-            error: new ProviderRejected({
+            error: ProviderRejected.new({
               message: "mailbox does not exist",
               provider: "recording",
               status: 422
@@ -262,7 +262,7 @@ describe("Email", () => {
     Effect.gen(function* () {
       const recorder = yield* RecordingTransport.make({
         script: [
-          { type: "rejected", error: new DeliveryUncertain({ message: "x" }) },
+          { type: "rejected", error: DeliveryUncertain.new({ message: "x" }) },
           { type: "accepted" }
         ]
       })

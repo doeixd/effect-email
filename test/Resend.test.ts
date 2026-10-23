@@ -157,8 +157,7 @@ describe("Resend", () => {
           }
         ]
       }).pipe(
-        Effect.provide(emailLayer),
-        Effect.provide(httpLayer),
+        Effect.provide(Layer.merge(emailLayer, httpLayer)),
         Effect.flip
       )
 
@@ -298,7 +297,7 @@ describe("Resend", () => {
           text: "Body"
         },
         { providerIdempotencyKey: "idem_123" }
-      ).pipe(Effect.provide(emailLayer), Effect.provide(httpLayer))
+      ).pipe(Effect.provide(Layer.merge(emailLayer, httpLayer)))
 
       assert.strictEqual(authorization, "Bearer re_test_key")
       assert.strictEqual(idempotencyKey, "idem_123")

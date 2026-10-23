@@ -18,7 +18,7 @@ const layerFor = (transport: EmailTransport.Transport) =>
   })
 
 const unavailable = () =>
-  new TransportUnavailable({
+  TransportUnavailable.new({
     message: "temporary outage",
     provider: "recording",
     retryable: true

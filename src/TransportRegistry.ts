@@ -52,7 +52,7 @@ export const make = (
         const transport = byName.get(route)
         return transport === undefined
           ? Effect.fail(
-              new UnsupportedCapability({
+              UnsupportedCapability.new({
                 message: `unknown email route: ${route}`,
                 capability: "route"
               })

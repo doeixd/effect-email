@@ -53,7 +53,7 @@ const digest = (
       return toHex(new Uint8Array(hash))
     },
     catch: (cause) =>
-      new StoreUnavailable({
+      StoreUnavailable.new({
         message: "failed to hash spool content",
         cause
       })
@@ -97,7 +97,7 @@ export const layerMemory: Layer.Layer<Spool> = Layer.effect(
       Effect.gen(function* () {
         const entry = (yield* Ref.get(state)).get(reference.key)
         if (entry === undefined) {
-          return yield* new StoreUnavailable({
+          return yield* StoreUnavailable.new({
             message: `spool object not found: ${reference.key}`
           })
         }

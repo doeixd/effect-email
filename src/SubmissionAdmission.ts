@@ -188,7 +188,7 @@ const submissionError = <E extends { readonly _tag: string }>(
   cause: E
 ): EmailError => {
   if (cause._tag === "PersistedQueueError") {
-    return new StoreUnavailable({
+    return StoreUnavailable.new({
       message: "submission queue unavailable",
       cause
     })
@@ -296,13 +296,13 @@ export const make = (
       ) {
         const stored = yield* store.get(deliveryId)
         if (Option.isNone(stored)) {
-          return yield* new StoreUnavailable({
+          return yield* StoreUnavailable.new({
             message: `delivery intent not found: ${deliveryId}`
           })
         }
         const intent = stored.value
         if (intent.tenantId === undefined) {
-          return yield* new StoreUnavailable({
+          return yield* StoreUnavailable.new({
             message: `delivery intent has no tenant: ${deliveryId}`
           })
         }

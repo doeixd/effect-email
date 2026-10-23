@@ -148,7 +148,7 @@ const attachmentFor = (
 ): Effect.Effect<AhaSendAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "AhaSend does not accept remote attachment URLs",
         provider: "ahasend",
         capability: "remote-attachments"
@@ -157,7 +157,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "AhaSend adapter cannot read attachments from local paths; provide bytes instead",
         provider: "ahasend",
@@ -192,7 +192,7 @@ const payloadFor = (
 ): Effect.Effect<AhaSendPayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `AhaSend adapter supports rendered content only, received ${message.content._tag}`,
         provider: "ahasend",
         capability: "content"
@@ -302,7 +302,7 @@ const classifyFailure = (
   }
 
   if (response.status === 422) {
-    return new IdempotencyConflict({
+    return IdempotencyConflict.new({
       ...common,
       ...(idempotencyKey === undefined
         ? {}
@@ -310,18 +310,18 @@ const classifyFailure = (
     })
   }
   if (response.status === 409) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const makeSendEmail = (
@@ -360,7 +360,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "AhaSend request failed before a response was received; outcome is unknown",
             provider: "ahasend",
             cause
@@ -378,7 +378,7 @@ const makeSendEmail = (
     const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "AhaSend returned an unreadable success response",
             provider: "ahasend",
             status: response.status,
@@ -389,7 +389,7 @@ const makeSendEmail = (
     const body = yield* Schema.decodeUnknownEffect(AhaSendSuccess)(raw).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "AhaSend returned an unreadable success response",
             provider: "ahasend",
             status: response.status,
@@ -410,14 +410,14 @@ const makeSendEmail = (
     }
     if (acceptedIds.length === 0) {
       if (rejections.length > 0) {
-        return yield* new ProviderRejected({
+        return yield* ProviderRejected.new({
           message: rejections.join("; "),
           provider: "ahasend",
           status: response.status,
           retryable: false
         })
       }
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "AhaSend response did not contain a message id",
         provider: "ahasend",
         status: response.status,
@@ -425,7 +425,7 @@ const makeSendEmail = (
       })
     }
     if (rejections.length > 0) {
-      return yield* new DeliveryUncertain({
+      return yield* DeliveryUncertain.new({
         message: `AhaSend accepted some recipients but rejected others: ${rejections.join("; ")}`,
         provider: "ahasend",
         status: response.status,
@@ -456,7 +456,7 @@ const makeTransport = (
     const recipients =
       message.to.length + message.cc.length + message.bcc.length
     if (conversational && recipients > CONVERSATION_RECIPIENT_LIMIT) {
-      return yield* new UnsupportedCapability({
+      return yield* UnsupportedCapability.new({
         message: `AhaSend accepts at most ${CONVERSATION_RECIPIENT_LIMIT} combined recipients for a conversation`,
         provider: "ahasend",
         capability: "recipients"

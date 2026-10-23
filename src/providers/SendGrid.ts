@@ -156,7 +156,7 @@ const attachmentFor = (
 ): Effect.Effect<SendGridAttachment, UnsupportedCapability> => {
   if (attachment.source._tag !== "content") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "SendGrid adapter requires attachment bytes; remote and path sources are not supported",
         provider: "sendgrid",
@@ -196,7 +196,7 @@ const envelopeFor = (
 ): Effect.Effect<EnvelopePayload, TransportError> => {
   if (message.content._tag !== "rendered") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `SendGrid adapter supports rendered content only, received ${message.content._tag}`,
         provider: "sendgrid",
         capability: "content"
@@ -289,15 +289,15 @@ const classifyFailure = (
     ...(retryAfterMillis === undefined ? {} : { retryAfterMillis })
   }
   if (status === 401 || status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const errorMessage = (body: unknown): string | undefined => {
@@ -359,7 +359,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "SendGrid request failed before a response was received; outcome is unknown",
             provider: "sendgrid",
             cause
@@ -378,7 +378,7 @@ const makeSendEmail = (
 
     const id = headerValue(response, "x-message-id")
     if (id === undefined || id.length === 0) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "SendGrid response did not include an x-message-id header",
         provider: "sendgrid",
         status: response.status

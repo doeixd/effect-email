@@ -81,8 +81,8 @@ const socketFailure = (
   submitted: boolean
 ): TransportError =>
   submitted
-    ? new DeliveryUncertain({ message, provider: "smtp", cause })
-    : new TransportUnavailable({
+    ? DeliveryUncertain.new({ message, provider: "smtp", cause })
+    : TransportUnavailable.new({
         message,
         provider: "smtp",
         retryable: true,
@@ -205,7 +205,7 @@ const connect = (
             return new TextDecoder().decode(read.line)
           }
           if (read.overflow) {
-            return yield* new MalformedProviderResponse({
+            return yield* MalformedProviderResponse.new({
               message: "SMTP server sent an overlong line",
               provider: "smtp"
             })
@@ -237,7 +237,7 @@ const connect = (
         const first = yield* readLine()
         const match = /^(\d{3})([ -])(.*)$/.exec(first)
         if (match === null) {
-          return yield* new MalformedProviderResponse({
+          return yield* MalformedProviderResponse.new({
             message: "SMTP reply did not start with a status code",
             provider: "smtp"
           })
@@ -247,7 +247,7 @@ const connect = (
         let separator = match[2]
         while (separator === "-") {
           if (lines.length >= maxReplyLines) {
-            return yield* new MalformedProviderResponse({
+            return yield* MalformedProviderResponse.new({
               message: `SMTP multiline reply exceeded ${maxReplyLines} lines`,
               provider: "smtp"
             })
@@ -255,7 +255,7 @@ const connect = (
           const next = yield* readLine()
           const nextMatch = /^(\d{3})([ -])(.*)$/.exec(next)
           if (nextMatch === null || Number(nextMatch[1]) !== code) {
-            return yield* new MalformedProviderResponse({
+            return yield* MalformedProviderResponse.new({
               message: "SMTP multiline reply was malformed",
               provider: "smtp"
             })
@@ -287,7 +287,7 @@ const connect = (
       }`
       if (reply.code >= 500) {
         return Effect.fail(
-          new ProviderRejected({
+          ProviderRejected.new({
             message,
             provider: "smtp",
             status: reply.code
@@ -295,7 +295,7 @@ const connect = (
         )
       }
       return Effect.fail(
-        new TransportUnavailable({
+        TransportUnavailable.new({
           message,
           provider: "smtp",
           status: reply.code,
@@ -319,7 +319,7 @@ const connect = (
           (line) => line.trim().toUpperCase() === "STARTTLS"
         )
       ) {
-        return yield* new ProviderRejected({
+        return yield* ProviderRejected.new({
           message: "SMTP server does not advertise STARTTLS",
           provider: "smtp"
         })
@@ -339,7 +339,7 @@ const connect = (
       const secure =
         options.secure === true || options.startTls === true
       if (!secure && options.allowInsecureAuth !== true) {
-        return yield* new UnsupportedCapability({
+        return yield* UnsupportedCapability.new({
           message: "refusing SMTP AUTH over a plaintext connection",
           provider: "smtp",
           capability: "authentication"
@@ -356,7 +356,7 @@ const connect = (
       if (auth.code === 235) {
         // authenticated
       } else if (auth.code === 535) {
-        return yield* new AuthenticationFailed({
+        return yield* AuthenticationFailed.new({
           message: "SMTP authentication failed",
           provider: "smtp",
           status: auth.code
@@ -374,7 +374,7 @@ const connect = (
       envelope: PreparedEnvelope
     ) {
       if (!healthy) {
-        return yield* new TransportUnavailable({
+        return yield* TransportUnavailable.new({
           message: "SMTP connection is no longer healthy",
           provider: "smtp",
           retryable: true
@@ -387,7 +387,7 @@ const connect = (
           : yield* Dkim.sign(unsigned, options.dkim).pipe(
               Effect.mapError(
                 (cause) =>
-                  new ProviderRejected({
+                  ProviderRejected.new({
                     message: "SMTP DKIM signing failed",
                     provider: "smtp",
                     cause

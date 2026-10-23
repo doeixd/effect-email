@@ -253,7 +253,7 @@ export const publishPending = (
       after = pending[pending.length - 1]!.deliveryId
     }
     return ids
-  })
+  }).pipe(Effect.withSpan("Submissions.publishPending"))
 
 export const runPublisher = (options: {
   readonly queue: PersistedQueue.PersistedQueue<SubmissionJob>
@@ -344,7 +344,7 @@ export const processSubmission = (
 
     const stored = yield* store.get(job.deliveryId)
     if (Option.isNone(stored)) {
-      return yield* new StoreUnavailable({
+      return yield* StoreUnavailable.new({
         message: `delivery intent not found: ${job.deliveryId}`
       })
     }
@@ -365,7 +365,7 @@ export const processSubmission = (
       }
       const refreshed = yield* store.get(job.deliveryId)
       if (Option.isNone(refreshed)) {
-        return yield* new StoreUnavailable({
+        return yield* StoreUnavailable.new({
           message: `delivery intent not found: ${job.deliveryId}`
         })
       }
@@ -485,7 +485,7 @@ export const processSubmission = (
     if (decision.reason === "exhausted") {
       return yield* error
     }
-  })
+  }).pipe(Effect.withSpan("Submissions.processSubmission"))
 
 export const reconcileStale = (
   options: {
@@ -523,7 +523,7 @@ export const reconcileStale = (
         yield* store.recordUncertain(
           intent.deliveryId,
           intent.dispatchGeneration,
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message:
               "submission remained in-progress past the reconciliation cutoff",
             provider: "submission-worker"

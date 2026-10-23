@@ -150,7 +150,7 @@ const attachmentFor = (
 ): Effect.Effect<MailtrapAttachment, UnsupportedCapability> => {
   if (attachment.source._tag === "url") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "Mailtrap does not accept remote attachment URLs",
         provider: "mailtrap",
         capability: "remote-attachments"
@@ -159,7 +159,7 @@ const attachmentFor = (
   }
   if (attachment.source._tag === "path") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message:
           "Mailtrap adapter cannot read attachments from local paths; provide bytes instead",
         provider: "mailtrap",
@@ -192,7 +192,7 @@ const payloadFor = (
 ): Effect.Effect<MailtrapPayload, TransportError> => {
   if (message.to.length > RECIPIENT_LIMIT) {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailtrap accepts at most ${RECIPIENT_LIMIT} to recipients, got ${message.to.length}`,
         provider: "mailtrap",
         capability: "recipients"
@@ -202,7 +202,7 @@ const payloadFor = (
   const content = message.content
   if (content._tag !== "rendered" && content._tag !== "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailtrap adapter does not support ${content._tag} content`,
         provider: "mailtrap",
         capability: content._tag === "raw" ? "raw-mime" : "local-templates"
@@ -322,19 +322,19 @@ const classifyFailure = (
     ...(retryAfterMillis === undefined ? {} : { retryAfterMillis })
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const missingId = (body: unknown, status: number): TransportError =>
-  new MalformedProviderResponse({
+  MalformedProviderResponse.new({
     message: "Mailtrap success response did not contain a message id",
     provider: "mailtrap",
     status,
@@ -373,7 +373,7 @@ const makeSend = (
     client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Mailtrap request failed before a response was received; outcome is unknown",
             provider: "mailtrap",
             cause
@@ -414,7 +414,7 @@ const makeSend = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailtrap returned an unreadable success response",
             provider: "mailtrap",
             status: response.status,
@@ -423,7 +423,7 @@ const makeSend = (
       )
     )
     if (decoded.success === false) {
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         message: errorMessage(body) ?? "Mailtrap reported a failed send",
         provider: "mailtrap",
         status: response.status,
@@ -455,7 +455,7 @@ const makeSend = (
     ).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailtrap returned an unreadable batch response",
             provider: "mailtrap",
             status: response.status,
@@ -522,7 +522,7 @@ const makeTransport = (
         String(options.inboxId).trim().length === 0)
     ) {
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message: "Mailtrap sandbox requires an inboxId",
           provider: "mailtrap",
           capability: "sandbox"
@@ -557,7 +557,7 @@ const makeTransport = (
       sandbox &&
       (options.inboxId === undefined ||
         String(options.inboxId).trim().length === 0)
-        ? new UnsupportedCapability({
+        ? UnsupportedCapability.new({
             message: "Mailtrap sandbox requires an inboxId",
             provider: "mailtrap",
             capability: "sandbox"
@@ -606,7 +606,7 @@ const makeTransport = (
           ? {
               _tag: "uncertain",
               index,
-              error: new MalformedProviderResponse({
+              error: MalformedProviderResponse.new({
                 message:
                   "Mailtrap batch response did not contain an id for this message",
                 provider: "mailtrap"

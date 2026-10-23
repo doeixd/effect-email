@@ -74,7 +74,7 @@ const attachmentBase64 = (
       )
     case "path":
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message:
             "SMTP MIME building cannot read attachments from local paths",
           provider: "smtp",
@@ -83,7 +83,7 @@ const attachmentBase64 = (
       )
     case "url":
       return Effect.fail(
-        new UnsupportedCapability({
+        UnsupportedCapability.new({
           message:
             "SMTP MIME building does not fetch remote attachment URLs",
           provider: "smtp",
@@ -111,7 +111,7 @@ const bodyPart = (
   }
   if (message.content._tag === "template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "local template was not rendered before SMTP submission",
         provider: "smtp",
         capability: "content"
@@ -120,7 +120,7 @@ const bodyPart = (
   }
   if (message.content._tag === "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: "SMTP does not support provider-hosted templates",
         provider: "smtp",
         capability: "provider-templates"

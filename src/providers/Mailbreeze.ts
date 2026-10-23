@@ -126,7 +126,7 @@ const payloadFor = (
   const content = message.content
   if (content._tag !== "rendered" && content._tag !== "provider-template") {
     return Effect.fail(
-      new UnsupportedCapability({
+      UnsupportedCapability.new({
         message: `Mailbreeze adapter does not support ${content._tag} content`,
         provider: "mailbreeze",
         capability: content._tag === "raw" ? "raw-mime" : "local-templates"
@@ -214,18 +214,18 @@ const classifyFailure = (
     ...(retryAfterMillis === undefined ? {} : { retryAfterMillis })
   }
   if (body.error?.code === "SENDING_DISABLED") {
-    return new ProviderRejected(common)
+    return ProviderRejected.new(common)
   }
   if (response.status === 401 || response.status === 403) {
-    return new AuthenticationFailed(common)
+    return AuthenticationFailed.new(common)
   }
   if (response.status === 429) {
-    return new RateLimited({ ...common, retryable: true })
+    return RateLimited.new({ ...common, retryable: true })
   }
   if (response.status >= 500) {
-    return new TransportUnavailable({ ...common, retryable: true })
+    return TransportUnavailable.new({ ...common, retryable: true })
   }
-  return new ProviderRejected(common)
+  return ProviderRejected.new(common)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -255,7 +255,7 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new DeliveryUncertain({
+          DeliveryUncertain.new({
             message: "Mailbreeze request failed before a response was received; outcome is unknown",
             provider: "mailbreeze",
             cause
@@ -268,7 +268,7 @@ const makeSendEmail = (
     const raw = yield* response.json.pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailbreeze returned unreadable JSON",
             provider: "mailbreeze",
             status: response.status,
@@ -279,7 +279,7 @@ const makeSendEmail = (
     const body = yield* Schema.decodeUnknownEffect(MailbreezeSuccess)(raw).pipe(
       Effect.mapError(
         (cause) =>
-          new MalformedProviderResponse({
+          MalformedProviderResponse.new({
             message: "Mailbreeze returned an unreadable response",
             provider: "mailbreeze",
             status: response.status,
@@ -288,7 +288,7 @@ const makeSendEmail = (
       )
     )
     if (body.success === false) {
-      return yield* new ProviderRejected({
+      return yield* ProviderRejected.new({
         message:
           body.error?.message ??
           "Mailbreeze rejected the send",
@@ -306,7 +306,7 @@ const makeSendEmail = (
           ? data.messageId
           : undefined
     if (id === undefined) {
-      return yield* new MalformedProviderResponse({
+      return yield* MalformedProviderResponse.new({
         message: "Mailbreeze response did not contain an email id",
         provider: "mailbreeze",
         status: response.status,
@@ -335,7 +335,7 @@ const makeTransport = (
     const message = envelope.message
     if (envelope.providerIdempotencyKey !== undefined) {
       if (envelope.providerIdempotencyKey.length > IDEMPOTENCY_KEY_LIMIT) {
-        return yield* new UnsupportedCapability({
+        return yield* UnsupportedCapability.new({
           message: `Mailbreeze accepts at most ${IDEMPOTENCY_KEY_LIMIT} characters for an idempotency key`,
           provider: "mailbreeze",
           capability: "idempotency"

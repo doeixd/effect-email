@@ -77,7 +77,7 @@ describe("SMTP session", () => {
         connection: test.value,
         admit: () =>
           Effect.fail(
-            new StoreUnavailable({ message: "storage down" })
+            StoreUnavailable.new({ message: "storage down" })
           )
       })
 
