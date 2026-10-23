@@ -130,6 +130,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   publisher, reconciler, scoped shutdown, and status lookup.
 - Operator queries can page by tenant and status; redrive records actor/reason;
   pruning retains non-terminal work.
+- Admission and worker emit bounded Effect counters for admissions, attempts,
+  acceptance, rejection, uncertainty, retries, and failures.
 - Provider support is labeled by evidence in `docs/provider-support.md`; SMTP
   covers slow clients and invalid-command recovery.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
@@ -145,7 +147,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Suppression discovery is optional | Admission and worker use `serviceOption` | A production assembly can accidentally omit enforcement |
 | Hard-bounce/complaint auto-suppression is not automatic | Verified events are stored and projected | Operators must apply suppression policy explicitly |
 | Legacy diagnostics still use unbounded scans | Gateway/catcher `listAll` paths | New tenant-scoped paging exists, but the legacy endpoints are not migrated |
-| Metrics and provider-lookup reconciliation are limited | Effect spans/annotations only | No first-class metric set or automatic provider retrieval reconciliation |
+| Provider-lookup reconciliation is limited | Effect spans and counters exist | No automatic provider retrieval reconciliation |
 | No live provider sandbox suite | Contract tests use local fixtures | Sandbox parity remains release hardening |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |

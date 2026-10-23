@@ -1,4 +1,11 @@
-import { Context, DateTime, Effect, Layer, Option } from "effect"
+import {
+  Context,
+  DateTime,
+  Effect,
+  Layer,
+  Metric,
+  Option
+} from "effect"
 import { PersistedQueue } from "effect/persistence"
 import type { DeliveryId, RouteName, TenantId } from "./Ids"
 import { gatewaySubmissionId } from "./Ids"
@@ -18,6 +25,7 @@ import * as Submissions from "./queue/Submissions"
 import type { RendererShape } from "./render/Template"
 import type { SmtpSubmission } from "./smtp/Protocol"
 import { SuppressionStore } from "./Suppression"
+import * as Metrics from "./Metrics"
 
 export interface AdmissionRequest {
   readonly tenantId: TenantId
@@ -228,6 +236,7 @@ export const make = (
         Effect.provideService(DeliveryStore, store),
         Effect.mapError(submissionError)
       )
+      yield* Metric.update(Metrics.admissions, 1)
       const acceptedAt = yield* DateTime.now
       return {
         gatewaySubmissionId: gatewaySubmissionId(

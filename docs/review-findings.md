@@ -53,6 +53,7 @@ Follow-up snapshot (`1ca778b`):
   safety coverage.
 - Added provider evidence labeling, dependency strategy, and SMTP slow-client /
   invalid-command coverage.
+- Added bounded admission and worker counters for operational metrics.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.

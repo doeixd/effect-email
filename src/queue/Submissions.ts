@@ -1,4 +1,13 @@
-import { Clock, DateTime, Effect, Layer, Option, Schedule, Schema } from "effect"
+import {
+  Clock,
+  DateTime,
+  Effect,
+  Layer,
+  Metric,
+  Option,
+  Schedule,
+  Schema
+} from "effect"
 import { PersistedQueue } from "effect/persistence"
 import type { DeliveryId, TenantId } from "../Ids"
 import {
@@ -21,6 +30,7 @@ import type {
 } from "../Message"
 import { parseMailbox, prepare } from "../Message"
 import { SuppressionStore } from "../Suppression"
+import * as Metrics from "../Metrics"
 import type { RendererShape } from "../render/Template"
 import { decideRetry } from "../RetryDecision"
 import { Email } from "../Email"
@@ -380,6 +390,7 @@ export const processSubmission = (
       job.dispatchGeneration
     )
     const claimId = claimed.claimId
+    yield* Metric.update(Metrics.attempts, 1)
     const result = yield* Effect.result(
       email.send(intent.message, {
         deliveryId: intent.deliveryId,
@@ -389,6 +400,7 @@ export const processSubmission = (
     )
 
     if (result._tag === "Success") {
+      yield* Metric.update(Metrics.accepted, 1)
       const recorded = yield* Effect.result(
         store.recordAccepted(
           job.deliveryId,
@@ -415,6 +427,7 @@ export const processSubmission = (
     })
 
     if (decision.action === "reconcile") {
+      yield* Metric.update(Metrics.uncertain, 1)
       yield* store.recordUncertain(
         job.deliveryId,
         job.dispatchGeneration,
@@ -425,6 +438,7 @@ export const processSubmission = (
     }
 
     if (decision.action === "retry") {
+      yield* Metric.update(Metrics.retries, 1)
       yield* store.recordDeferred(
         job.deliveryId,
         job.dispatchGeneration,
@@ -436,6 +450,7 @@ export const processSubmission = (
     }
 
     if (certainty === "rejected") {
+      yield* Metric.update(Metrics.rejected, 1)
       yield* store.recordRejected(
         job.deliveryId,
         job.dispatchGeneration,
@@ -448,6 +463,7 @@ export const processSubmission = (
       return
     }
 
+    yield* Metric.update(Metrics.failures, 1)
     yield* store.recordFailed(
       job.deliveryId,
       job.dispatchGeneration,

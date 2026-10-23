@@ -56,9 +56,21 @@ cancellation tombstones, and audit history before production use.
 ## Diagnostics and tracing
 
 Admission, worker, and provider operations carry Effect span annotations for
-delivery ID, route, provider, and queue attempt. Keep high-cardinality values
-such as delivery IDs and recipient addresses in traces, not metric labels.
-Provider payloads, credentials, and attachments must not be logged by default.
+delivery ID, route, provider, and queue attempt.
+
+Metrics exported by `src/Metrics.ts`:
+
+- `effect_email_admissions_total`
+- `effect_email_attempts_total`
+- `effect_email_accepted_total`
+- `effect_email_rejected_total`
+- `effect_email_uncertain_total`
+- `effect_email_retries_total`
+- `effect_email_failures_total`
+
+Keep high-cardinality values such as delivery IDs and recipient addresses in
+traces, not metric labels. Provider payloads, credentials, and attachments must
+not be logged by default.
 
 ## Readiness
 
