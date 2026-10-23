@@ -400,7 +400,11 @@ export const requestCancellation = (
 
 export const redrive = (
   intent: DeliveryIntent,
-  now: DateTime.Utc
+  now: DateTime.Utc,
+  options: {
+    readonly actor?: string
+    readonly reason?: string
+  } = {}
 ): DeliveryIntent => {
   const {
     receipt: _receipt,
@@ -417,6 +421,15 @@ export const redrive = (
     status: "pending",
     attempts: 0,
     cancellationRequested: false,
+    redriveHistory: [
+      ...(intent.redriveHistory ?? []),
+      {
+        at: now,
+        previousGeneration: intent.dispatchGeneration,
+        ...(options.actor === undefined ? {} : { actor: options.actor }),
+        ...(options.reason === undefined ? {} : { reason: options.reason })
+      }
+    ],
     updatedAt: now
   }
 }

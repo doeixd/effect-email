@@ -471,7 +471,17 @@ const makeHandle = (options: GatewayOptions) =>
         acknowledgeDuplicateRisk:
           request.headers[
             "x-effect-email-acknowledge-duplicate-risk"
-          ] === "true"
+          ] === "true",
+        ...(request.headers["x-effect-email-redrive-actor"] === undefined
+          ? {}
+          : {
+              actor: request.headers["x-effect-email-redrive-actor"]
+            }),
+        ...(request.headers["x-effect-email-redrive-reason"] === undefined
+          ? {}
+          : {
+              reason: request.headers["x-effect-email-redrive-reason"]
+            })
       })
     )
     if (redriven._tag === "Failure") {

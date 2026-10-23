@@ -7,7 +7,8 @@ import {
   deliveryId,
   destinationId,
   makeDestination,
-  providerMessageId
+  providerMessageId,
+  tenantId
 } from "../src/Ids"
 import { makeReceipt } from "../src/Submission"
 
@@ -259,6 +260,74 @@ describe("DeliveryStore", () => {
       )
       assert.strictEqual(allowed.status, "pending")
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("pages tenant-scoped delivery queries", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const tenant = tenantId("tenant_query")
+      const ids = [
+        deliveryId("dlv_query_1"),
+        deliveryId("dlv_query_2")
+      ]
+      for (const id of ids) {
+        yield* store.createIntent({
+          ...input,
+          deliveryId: id,
+          tenantId: tenant
+        })
+      }
+      yield* store.createIntent({
+        ...input,
+        deliveryId: deliveryId("dlv_query_other"),
+        tenantId: tenantId("tenant_other")
+      })
+
+      const first = yield* store.listForTenant({
+        tenantId: tenant,
+        limit: 1
+      })
+      const second = yield* store.listForTenant({
+        tenantId: tenant,
+        limit: 1,
+        after: first[0]!.deliveryId
+      })
+
+      assert.deepStrictEqual(
+        [first[0]?.deliveryId, second[0]?.deliveryId],
+        ids
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+
+  it.effect("records redrive actor and reason", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const id = deliveryId("dlv_redrive_audit")
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordUncertain(
+        id,
+        1,
+        new DeliveryUncertain({
+          message: "unknown",
+          provider: "mock"
+        })
+      )
+      yield* store.redrive(id, {
+        acknowledgeDuplicateRisk: true,
+        actor: "operator@example.com",
+        reason: "provider confirmed non-delivery"
+      })
+      const stored = yield* store.get(id)
+      const history = Option.isSome(stored)
+        ? stored.value.redriveHistory ?? []
+        : []
+
+      assert.strictEqual(history.length, 1)
+      assert.strictEqual(history[0]?.actor, "operator@example.com")
+      assert.strictEqual(
+        history[0]?.reason,
+        "provider confirmed non-delivery"
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("correlates and projects provider events deterministically", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore.DeliveryStore
@@ -328,6 +397,20 @@ describe("DeliveryStore", () => {
         "complained"
       )
       assert.strictEqual(events.length, 3)
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("retains non-terminal work during pruning", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const id = deliveryId("dlv_prune_active")
+      yield* store.createIntent({ ...input, deliveryId: id })
+      const pruned = yield* store.prune({
+        intentsBefore: DateTime.makeUnsafe(
+          new Date(Date.now() + 60_000)
+        )
+      })
+
+      assert.strictEqual(pruned.intents, 0)
+      assert.isTrue(Option.isSome(yield* store.get(id)))
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("deduplicates provider events", () =>
     Effect.gen(function* () {

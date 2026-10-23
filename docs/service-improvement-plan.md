@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `c812f87` (PR 10 partial)
-Status: PR 1-4 and 6-8 complete; PR 5, 9, and 10 partial
+Current baseline: `c812f87` plus PR 11
+Status: PR 1-4 and 6-8 complete; PR 5, 9, 10, and 11 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -22,7 +22,8 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 8 | Complete | Events correlate through receipt message IDs and destination, preserve ingestion time, and project deterministically without regressing terminal state |
 | 9 | Partial | Typed event waits, dispatch-time suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; automatic hard-bounce suppression and wait deadlines remain |
 | 10 | Partial | PostgreSQL service example, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; typed configuration errors and the optional runtime helper remain |
-| 11-12 | Not started | See the PR sequence |
+| 11 | Partial | Tenant/status paging, redrive audit, retention safety, and operations docs are implemented; legacy diagnostic scans, first-class metrics, and provider-lookup reconciliation remain |
+| 12 | Not started | See the PR sequence |
 
 ## 1. Objective
 
@@ -64,6 +65,7 @@ already addressed:
 | Suppression was checked only at admission | The worker re-checks suppression immediately before dispatch |
 | Cancellation and redrive lacked truthful outcomes | Cancellation returns explicit outcomes; uncertain redrive requires duplicate-risk acknowledgment |
 | Durable adoption required inferring assembly | Added `examples/postgres-service.ts`, production assembly guide, glossary, and adoption-level README |
+| Operator queries and redrive lacked bounded, attributable access | Added tenant/status paging and redrive actor/reason history; pruning retains non-terminal work |
 
 Still current:
 
@@ -78,6 +80,8 @@ Still current:
   remains deferred.
 - Remote attachment URLs are not content-addressed for durable replay.
 - Some startup configuration failures are still defects rather than typed errors.
+- Legacy diagnostics still use unbounded scans; first-class metrics and
+  provider-lookup reconciliation remain.
 
 ## 3. Target ownership
 

@@ -458,6 +458,7 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 - [Review plan](./docs/review-plan.md)
 - [Routing diagnostics](./docs/routing.md)
 - [Production assembly](./docs/production-assembly.md)
+- [Operations](./docs/operations.md)
 - [Delivery glossary](./docs/glossary.md)
 - [Policy composition](./docs/policy-composition.md)
 - [Service and feature improvement plan](./docs/service-improvement-plan.md)

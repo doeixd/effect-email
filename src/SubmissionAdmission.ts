@@ -7,7 +7,8 @@ import { InvalidMessage, RecipientSuppressed, StoreUnavailable } from "./EmailEr
 import type {
   CancellationOutcome,
   DeliveryEvent,
-  DeliveryIntent
+  DeliveryIntent,
+  DeliveryStatus
 } from "./DeliveryStore"
 import { DeliveryStore } from "./DeliveryStore"
 import type { MailboxInput, MessageDraft, MessageInput } from "./Message"
@@ -68,7 +69,11 @@ export interface SubmissionAdmissionShape {
   ) => Effect.Effect<boolean, StoreUnavailable>
   readonly redrive: (
     deliveryId: DeliveryId,
-    options?: { readonly acknowledgeDuplicateRisk?: boolean }
+    options?: {
+      readonly acknowledgeDuplicateRisk?: boolean
+      readonly actor?: string
+      readonly reason?: string
+    }
   ) => Effect.Effect<AdmissionReceipt, EmailError>
   readonly listUncertain: Effect.Effect<
     ReadonlyArray<DeliveryIntent>,
@@ -82,6 +87,12 @@ export interface SubmissionAdmissionShape {
     ReadonlyArray<DeliveryIntent>,
     StoreUnavailable
   >
+  readonly listForTenant: (options: {
+    readonly tenantId: TenantId
+    readonly status?: DeliveryStatus
+    readonly limit: number
+    readonly after?: DeliveryId
+  }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
   readonly appendProviderEvent: (
     event: DeliveryEvent
   ) => Effect.Effect<boolean, StoreUnavailable>
@@ -235,6 +246,8 @@ export const make = (
         deliveryId: DeliveryId,
         options: {
           readonly acknowledgeDuplicateRisk?: boolean
+          readonly actor?: string
+          readonly reason?: string
         } = {}
       ) {
         const stored = yield* store.get(deliveryId)
@@ -324,6 +337,7 @@ export const make = (
       listUncertain: store.listUncertain,
       listFailed: store.listFailed,
       listPending: store.listPending,
+      listForTenant: store.listForTenant,
       appendProviderEvent: store.appendProviderEvent,
       listEvents: store.listEvents
     }

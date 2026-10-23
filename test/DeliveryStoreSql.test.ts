@@ -126,6 +126,57 @@ describe("DeliveryStore SQL", () => {
       )
       assert.strictEqual(allowed.status, "pending")
     }).pipe(Effect.provide(layer)))
+  it.effect("pages tenant queries and records redrive audit", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore
+      const tenant = tenantId("tenant_sql_query")
+      const ids = [
+        deliveryId("dlv_sql_query_1"),
+        deliveryId("dlv_sql_query_2")
+      ]
+      for (const id of ids) {
+        yield* store.createIntent({
+          ...input,
+          deliveryId: id,
+          tenantId: tenant
+        })
+      }
+      const first = yield* store.listForTenant({
+        tenantId: tenant,
+        limit: 1
+      })
+      const second = yield* store.listForTenant({
+        tenantId: tenant,
+        limit: 1,
+        after: first[0]!.deliveryId
+      })
+      yield* store.beginAttempt(ids[0]!, 1)
+      yield* store.recordUncertain(
+        ids[0]!,
+        1,
+        new DeliveryUncertain({
+          message: "unknown",
+          provider: "mock"
+        })
+      )
+      yield* store.redrive(ids[0]!, {
+        acknowledgeDuplicateRisk: true,
+        actor: "operator@example.com",
+        reason: "verified"
+      })
+      const stored = yield* store.get(ids[0]!)
+
+      assert.deepStrictEqual(
+        [first[0]?.deliveryId, second[0]?.deliveryId],
+        ids
+      )
+      assert.strictEqual(
+        Option.isSome(stored)
+          ? stored.value.redriveHistory?.[0]?.actor
+          : undefined,
+        "operator@example.com"
+      )
+    }).pipe(Effect.provide(layer)))
   it.effect("paginates unqueued and stale intents", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore

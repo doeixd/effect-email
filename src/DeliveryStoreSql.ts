@@ -460,7 +460,7 @@ export const layerSql = (
                 ? new StoreUnavailable({
                     message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
                   })
-                : Transitions.redrive(intent, now),
+                : Transitions.redrive(intent, now, options),
             true
           ),
         listUncertain: intentsByStatus("uncertain").pipe(
@@ -516,6 +516,26 @@ export const layerSql = (
           return sql<{ readonly data: string }>`SELECT data FROM ${sql(
             intents
           )} WHERE status = ${"pending"} AND queued_at IS NULL AND tenant_id = ${options.tenantId} ${after} ORDER BY delivery_id LIMIT ${options.limit}`.pipe(
+            Effect.map((rows) =>
+              rows.map(
+                (row) => decode(JSON.parse(row.data)) as DeliveryIntent
+              )
+            ),
+            Effect.mapError(normalizeError)
+          )
+        },
+        listForTenant: (options) => {
+          const after =
+            options.after === undefined
+              ? sql``
+              : sql`AND delivery_id > ${options.after}`
+          const status =
+            options.status === undefined
+              ? sql``
+              : sql`AND status = ${options.status}`
+          return sql<{ readonly data: string }>`SELECT data FROM ${sql(
+            intents
+          )} WHERE tenant_id = ${options.tenantId} ${status} ${after} ORDER BY delivery_id LIMIT ${options.limit}`.pipe(
             Effect.map((rows) =>
               rows.map(
                 (row) => decode(JSON.parse(row.data)) as DeliveryIntent

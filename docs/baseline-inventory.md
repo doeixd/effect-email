@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 286 tests across 59 files.
+- `bun run check`: pass, 290 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -41,7 +41,7 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 | Routing diagnostics | `Routing.explain`, `Routing.requirementsOf` | Reports hard requirements, capability rejections, explicit-route exclusions, and preferences without sending | `src/Routing.ts`, `src/Capabilities.ts` |
 | Providers | Provider-specific `make`, layer, client, and transport constructors | 24 provider/infrastructure adapters plus local catchers and `Mock` | `src/providers/` |
 | Admission | `SubmissionAdmission.accept`, `acceptRaw`, `get`, `cancel`, `redrive` | Authorizes, optionally checks suppression, snapshots content, and persists an intent | `src/SubmissionAdmission.ts` |
-| Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, correlated event, cancellation, and retention state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
+| Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, correlated event, cancellation, retention, tenant-scoped paging, and redrive audit state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
 | Queue and recovery | `src/queue/Submissions.ts` | Persisted submission jobs, bounded publisher and stale-claim pages, worker, reconciliation, redrive | `src/queue/Submissions.ts` |
 | Workflows | `SubmitAfterDelay`, `WaitForDeliveryEvent` | Durable delay and typed event matching on `WorkflowEngine`; waits re-check stored events before blocking | `src/workflow/Submissions.ts` |
 | Gateway and SMTP | `Gateway`, `Catcher`, `Smtp` client/server | Authenticated submission paths with deny-by-default gateway/catcher authorization | `src/server/`, `src/smtp/` |
@@ -128,6 +128,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   `already-submitted`; uncertain redrive requires duplicate-risk acknowledgment.
 - `examples/postgres-service.ts` assembles SQL admission, queue, worker,
   publisher, reconciler, scoped shutdown, and status lookup.
+- Operator queries can page by tenant and status; redrive records actor/reason;
+  pruning retains non-terminal work.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -140,7 +142,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Typed event completion is caller-scoped | `workflow/Submissions.ts` | A typed wait must be completed with the same type/purpose scope |
 | Suppression discovery is optional | Admission and worker use `serviceOption` | A production assembly can accidentally omit enforcement |
 | Hard-bounce/complaint auto-suppression is not automatic | Verified events are stored and projected | Operators must apply suppression policy explicitly |
-| Diagnostics still use unbounded scans | `listAll` in gateway/catcher paths | Operator diagnostics can grow with total history until PR 11 |
+| Legacy diagnostics still use unbounded scans | Gateway/catcher `listAll` paths | New tenant-scoped paging exists, but the legacy endpoints are not migrated |
+| Metrics and provider-lookup reconciliation are limited | Effect spans/annotations only | No first-class metric set or automatic provider retrieval reconciliation |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |

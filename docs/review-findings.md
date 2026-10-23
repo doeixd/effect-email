@@ -25,7 +25,7 @@ Current snapshot after review fixes:
 
 Follow-up snapshot (`c812f87`):
 
-- `bun run check`: 286 passed across 59 files, including PostgreSQL 17
+- `bun run check`: 290 passed across 59 files, including PostgreSQL 17
   integration.
 - Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
 - Native batch dispatch survives `withRetry`.
@@ -49,6 +49,8 @@ Follow-up snapshot (`c812f87`):
   cancellation returns explicit outcomes and uncertain redrive requires
   duplicate-risk acknowledgment.
 - Added a runnable PostgreSQL service assembly and adoption-level documentation.
+- Added tenant/status delivery paging, redrive actor/reason history, and retention
+  safety coverage.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
@@ -1301,7 +1303,7 @@ Status: Fixed.
 ## Test audit
 
 - Full suite after final changes: 244 passed, 1 skipped.
-- Follow-up suite: 286 passed, including PostgreSQL 17 integration.
+- Follow-up suite: 290 passed, including PostgreSQL 17 integration.
 - CI workflow added at `.github/workflows/ci.yml` with a PostgreSQL 16 service.
 - Earlier flake run: three consecutive passes at 232/1 skipped.
 - No flaky failures observed.

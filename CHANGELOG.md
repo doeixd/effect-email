@@ -56,6 +56,8 @@
   reconciler, status lookup, and scoped shutdown.
 - Added three adoption-level README guidance, a production assembly guide, and
   a delivery glossary.
+- Added tenant/status paged operator queries and redrive actor/reason history.
+- Documented retention boundaries and verified pruning keeps non-terminal work.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

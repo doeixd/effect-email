@@ -90,7 +90,11 @@ export const layerCleanup = PersistedQueue.layerCleanup
 export const redrive = (
   queue: PersistedQueue.PersistedQueue<SubmissionJob>,
   job: SubmissionJob,
-  options: { readonly acknowledgeDuplicateRisk?: boolean } = {}
+  options: {
+    readonly acknowledgeDuplicateRisk?: boolean
+    readonly actor?: string
+    readonly reason?: string
+  } = {}
 ): Effect.Effect<
   string,
   EmailError | PersistedQueue.PersistedQueueError | Schema.SchemaError,

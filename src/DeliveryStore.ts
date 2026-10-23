@@ -109,6 +109,12 @@ export type DeliveryAttemptStatus =
   | "failed"
   | "deferred"
 
+export interface RedriveRecord {
+  readonly at: DateTime.Utc
+  readonly previousGeneration: number
+  readonly actor?: string
+  readonly reason?: string
+}
 export interface DeliveryAttempt {
   readonly attemptId: AttemptId
   readonly deliveryId: DeliveryId
@@ -149,6 +155,7 @@ export interface DeliveryIntent {
   readonly claimExpiresAt?: DateTime.Utc
   readonly lastEventAt?: DateTime.Utc
   readonly attemptHistory?: ReadonlyArray<DeliveryAttempt>
+  readonly redriveHistory?: ReadonlyArray<RedriveRecord>
 }
 
 export interface CreateDeliveryIntent {
@@ -220,7 +227,11 @@ export interface DeliveryStoreShape {
   ) => Effect.Effect<boolean, StoreUnavailable>
   readonly redrive: (
     deliveryId: DeliveryId,
-    options?: { readonly acknowledgeDuplicateRisk?: boolean }
+    options?: {
+      readonly acknowledgeDuplicateRisk?: boolean
+      readonly actor?: string
+      readonly reason?: string
+    }
   ) => Effect.Effect<DeliveryIntent, StoreUnavailable>
   readonly listAll: Effect.Effect<
     ReadonlyArray<DeliveryIntent>,
@@ -256,6 +267,12 @@ export interface DeliveryStoreShape {
   readonly listStaleInProgress: (options: {
     readonly now: DateTime.Utc
     readonly updatedBefore: DateTime.Utc
+    readonly limit: number
+    readonly after?: DeliveryId
+  }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
+  readonly listForTenant: (options: {
+    readonly tenantId: TenantId
+    readonly status?: DeliveryStatus
     readonly limit: number
     readonly after?: DeliveryId
   }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
@@ -550,7 +567,7 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
                 intents
               ]
             }
-            const nextIntent = Transitions.redrive(intent, now)
+            const nextIntent = Transitions.redrive(intent, now, options)
             const next = new Map(intents)
             next.set(deliveryId, nextIntent)
             return [nextIntent, next]
@@ -738,6 +755,22 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
                 intent.tenantId === options.tenantId &&
                 intent.status === "pending" &&
                 intent.queuedAt === undefined &&
+                (options.after === undefined ||
+                  intent.deliveryId > options.after)
+            )
+            .sort((left, right) =>
+              left.deliveryId.localeCompare(right.deliveryId)
+            )
+            .slice(0, options.limit)
+        ),
+      listForTenant: (options) =>
+        Effect.map(Ref.get(state), (intents) =>
+          [...intents.values()]
+            .filter(
+              (intent) =>
+                intent.tenantId === options.tenantId &&
+                (options.status === undefined ||
+                  intent.status === options.status) &&
                 (options.after === undefined ||
                   intent.deliveryId > options.after)
             )
