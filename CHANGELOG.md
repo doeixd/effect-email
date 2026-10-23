@@ -11,6 +11,13 @@
 - Policy wrappers and the durable worker share retry decisions. Permanent local
   failures stop without consuming repeated queue attempts, while retryable
   rejections and rate limits honor their budgets and delays.
+- Native batch retry preserves original indexes and never replays accepted or
+  uncertain slots. Safe partial-subset retry is opt-in via
+  `capabilities.partialBatchRetry`.
+- Fallback revalidates the secondary transport before dispatch and uses the
+  smaller composite batch/recipient limits.
+- Added policy composition documentation and regressions for partial batch
+  retry, fallback capability validation, and composite limits.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

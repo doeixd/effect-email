@@ -4,10 +4,12 @@ import type { Destination } from "./Ids"
 import { destinationId, makeDestination } from "./Ids"
 import type { MailboxInput } from "./Message"
 import { normalizeMailbox } from "./Message"
+import { checkCapabilities } from "./Capabilities"
 import type { EmailError, TransportError } from "./EmailError"
 import { decideRetry } from "./RetryDecision"
 import {
   certaintyOf,
+  DeliveryUncertain,
   isRetryable,
   TransportUnavailable,
   UnsupportedCapability
@@ -21,6 +23,7 @@ import type {
 
 export interface TransportCapabilities {
   readonly nativeBatch: boolean
+  readonly partialBatchRetry?: boolean
   readonly maxBatchSize?: number
   readonly maxRecipientsPerMessage?: number
   readonly attachments: boolean
@@ -37,6 +40,7 @@ export interface TransportCapabilities {
 
 export const defaultCapabilities: TransportCapabilities = {
   nativeBatch: false,
+  partialBatchRetry: false,
   attachments: true,
   remoteAttachments: false,
   rawMime: false,
@@ -95,25 +99,40 @@ export const withRetry =
     const base = policy.baseDelayMillis ?? 250
     const max = policy.maxDelayMillis ?? 30_000
 
-    const schedule = Schedule.recurs(maxAttempts - 1).pipe(
-      Schedule.modifyDelay(({ attempt, input }) => {
-        const backoff = Math.min(
-          max,
-          base * 2 ** (Math.max(1, attempt) - 1)
-        )
-        const jittered =
-          policy.jitter === true
-            ? Math.round(backoff * (0.5 + Math.random() * 0.5))
-            : backoff
-        return Effect.succeed(
-          Duration.millis(
-            Math.max(
-              jittered,
-              (input as TransportError).retryAfterMillis ?? 0
-            )
-          )
-        )
+    const delayFor = (attempt: number, error: EmailError): number => {
+      const backoff = Math.min(
+        max,
+        base * 2 ** (Math.max(1, attempt) - 1)
+      )
+      const jittered =
+        policy.jitter === true
+          ? Math.round(backoff * (0.5 + Math.random() * 0.5))
+          : backoff
+      const retryAfterMillis =
+        "retryAfterMillis" in error
+          ? error.retryAfterMillis ?? 0
+          : 0
+      return Math.max(jittered, retryAfterMillis)
+    }
+
+    const decisionFor = (error: EmailError, attemptsMade: number) =>
+      decideRetry(error, {
+        attemptsMade,
+        maxAttempts,
+        ...(policy.retryable === undefined
+          ? {}
+          : {
+              retryable: (failure) =>
+                policy.retryable?.(failure as TransportError) ?? false
+            })
       })
+
+    const schedule = Schedule.recurs(maxAttempts - 1).pipe(
+      Schedule.modifyDelay(({ attempt, input }) =>
+        Effect.succeed(
+          Duration.millis(delayFor(attempt, input as TransportError))
+        )
+      )
     )
 
     const retrying = <A>(
@@ -121,15 +140,7 @@ export const withRetry =
     ): Effect.Effect<A, TransportError> =>
       effect.pipe(
         Effect.retry({
-          while: (error) =>
-            decideRetry(error, {
-              ...(policy.retryable === undefined
-                ? {}
-                : {
-                    retryable: (failure) =>
-                      policy.retryable?.(failure as TransportError) ?? false
-                  })
-            }).action === "retry",
+          while: (error) => decisionFor(error, 0).action === "retry",
           schedule
         })
       )
@@ -149,11 +160,99 @@ export const withRetry =
     if (!isNativeBatchTransport(transport)) {
       return decorated
     }
-    return {
-      ...decorated,
-      sendBatch: (envelopes) =>
-        retrying(transport.sendBatch(envelopes))
-    } as NativeBatchTransport
+
+    const sendBatch: NativeBatchTransport["sendBatch"] = Effect.fnUntraced(
+      function* (envelopes) {
+        if (
+          envelopes.length === 0 ||
+          transport.capabilities.partialBatchRetry !== true
+        ) {
+          return yield* retrying(transport.sendBatch(envelopes))
+        }
+
+        const outcomes = new Map<number, MessageOutcome>()
+        let pending = envelopes.map((envelope, index) => ({
+          envelope,
+          index
+        }))
+        let round = 0
+
+        while (pending.length > 0) {
+          const result = yield* Effect.result(
+            transport.sendBatch(pending.map((slot) => slot.envelope))
+          )
+          if (result._tag === "Failure") {
+            const decision = decisionFor(result.failure, round + 1)
+            if (decision.action === "retry") {
+              const delay =
+                decision.delayMillis ??
+                delayFor(round + 1, result.failure)
+              if (delay > 0) {
+                yield* Effect.sleep(Duration.millis(delay))
+              }
+              round += 1
+              continue
+            }
+            for (const slot of pending) {
+              outcomes.set(
+                slot.index,
+                failureOutcome(slot.index, result.failure)
+              )
+            }
+            break
+          }
+
+          const retrySlots: typeof pending = []
+          const retryDelays: Array<number> = []
+          for (const [position, slot] of pending.entries()) {
+            const outcome = result.success[position]
+            if (outcome === undefined) {
+              outcomes.set(
+                slot.index,
+                failureOutcome(
+                  slot.index,
+                  new DeliveryUncertain({
+                    message:
+                      "provider batch response omitted this message",
+                    provider: transport.destination.provider
+                  })
+                )
+              )
+              continue
+            }
+            const mapped = { ...outcome, index: slot.index }
+            if (mapped._tag === "rejected") {
+              const decision = decisionFor(mapped.error, round + 1)
+              if (decision.action === "retry") {
+                retrySlots.push(slot)
+                retryDelays.push(
+                  decision.delayMillis ??
+                    delayFor(round + 1, mapped.error)
+                )
+                continue
+              }
+            }
+            outcomes.set(slot.index, mapped)
+          }
+
+          if (retrySlots.length === 0) {
+            break
+          }
+          const delay = Math.max(...retryDelays)
+          if (delay > 0) {
+            yield* Effect.sleep(Duration.millis(delay))
+          }
+          pending = retrySlots
+          round += 1
+        }
+
+        return [...outcomes.values()].sort(
+          (left, right) => left.index - right.index
+        )
+      }
+    )
+
+    return { ...decorated, sendBatch } as NativeBatchTransport
   }
 
 export interface FallbackOptions {
@@ -633,7 +732,9 @@ export const withFallback =
         return yield* first.failure
       }
       options.onFailover?.(primary, secondary, first.failure)
-      return yield* secondary.send(reroute(envelope, secondary))
+      const routed = reroute(envelope, secondary)
+      yield* checkCapabilities(secondary, routed.message)
+      return yield* secondary.send(routed)
     })
 
     const sendBatch: NativeBatchTransport["sendBatch"] = Effect.fnUntraced(
@@ -652,14 +753,26 @@ export const withFallback =
         if (pending.length === 0) {
           return first
         }
-        const next = yield* runOutcomes(
-          secondary,
-          pending.map((index) =>
-            reroute(envelopes[index]!, secondary)
-          )
-        )
         const merged = [...first]
-        for (const [slot, index] of pending.entries()) {
+        const secondaryEnvelopes: Array<PreparedEnvelope> = []
+        const secondarySlots: Array<number> = []
+        for (const index of pending) {
+          const routed = reroute(envelopes[index]!, secondary)
+          const checked = yield* Effect.result(
+            checkCapabilities(secondary, routed.message)
+          )
+          if (checked._tag === "Failure") {
+            merged[index] = failureOutcome(index, checked.failure)
+            continue
+          }
+          secondaryEnvelopes.push(routed)
+          secondarySlots.push(index)
+        }
+        if (secondaryEnvelopes.length === 0) {
+          return merged.sort((left, right) => left.index - right.index)
+        }
+        const next = yield* runOutcomes(secondary, secondaryEnvelopes)
+        for (const [slot, index] of secondarySlots.entries()) {
           const outcome = next[slot]
           if (outcome !== undefined) {
             merged[index] = { ...outcome, index }
@@ -670,13 +783,31 @@ export const withFallback =
     )
 
     const legs = [primary, secondary]
+    const minLimit = (left?: number, right?: number): number | undefined =>
+      left === undefined
+        ? right
+        : right === undefined
+          ? left
+          : Math.min(left, right)
+    const maxBatchSize = minLimit(
+      primary.capabilities.maxBatchSize,
+      secondary.capabilities.maxBatchSize
+    )
+    const maxRecipientsPerMessage = minLimit(
+      primary.capabilities.maxRecipientsPerMessage,
+      secondary.capabilities.maxRecipientsPerMessage
+    )
     const capabilities: TransportCapabilities = {
       ...primary.capabilities,
       retrieve:
         primary.capabilities.retrieve ||
         secondary.capabilities.retrieve,
       cancel:
-        primary.capabilities.cancel || secondary.capabilities.cancel
+        primary.capabilities.cancel || secondary.capabilities.cancel,
+      ...(maxBatchSize === undefined ? {} : { maxBatchSize }),
+      ...(maxRecipientsPerMessage === undefined
+        ? {}
+        : { maxRecipientsPerMessage })
     }
 
     const retrieve: Transport["retrieve"] = (receipt) => {

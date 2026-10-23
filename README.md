@@ -445,6 +445,7 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 - [Release checklist](./docs/release.md)
 - [Review findings](./docs/review-findings.md)
 - [Review plan](./docs/review-plan.md)
+- [Policy composition](./docs/policy-composition.md)
 - [Service and feature improvement plan](./docs/service-improvement-plan.md)
 - [Delivery baseline inventory](./docs/baseline-inventory.md)
 - [Delivery lifecycle ADR](./docs/adr/0001-delivery-lifecycle.md)

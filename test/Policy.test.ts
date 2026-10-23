@@ -169,6 +169,61 @@ describe("EmailTransport.withRetry native batch", () => {
       assert.strictEqual((yield* client.inbox.messages).length, 2)
     }))
 
+  it.live("retries only eligible native batch slots", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const base = client.transport as EmailTransport.NativeBatchTransport
+      let calls = 0
+      let retriedEnvelopes = 0
+      const transport: EmailTransport.NativeBatchTransport = {
+        ...base,
+        capabilities: {
+          ...base.capabilities,
+          partialBatchRetry: true
+        },
+        sendBatch: (envelopes) =>
+          Effect.suspend(() => {
+            calls += 1
+            if (calls === 1) {
+              return Effect.gen(function* () {
+                const first = yield* base.sendBatch([envelopes[0]!])
+                return [
+                  first[0]!,
+                  {
+                    _tag: "rejected" as const,
+                    index: 1,
+                    error: unavailable()
+                  }
+                ]
+              })
+            }
+            retriedEnvelopes = envelopes.length
+            return base.sendBatch(envelopes)
+          })
+      }
+      const retried = EmailTransport.withRetry({
+        maxAttempts: 3,
+        baseDelayMillis: 1
+      })(transport)
+      const layer = Email.layer({
+        defaultFrom: "billing@example.com",
+        routes: { default: retried }
+      })
+
+      const outcomes = yield* Email.sendBatch([
+        { to: "one@example.com", subject: "One", text: "One" },
+        { to: "two@example.com", subject: "Two", text: "Two" }
+      ]).pipe(Effect.provide(layer))
+
+      assert.strictEqual(calls, 2)
+      assert.strictEqual(retriedEnvelopes, 1)
+      assert.deepStrictEqual(
+        outcomes.map((outcome) => outcome._tag),
+        ["accepted", "accepted"]
+      )
+      assert.strictEqual((yield* client.inbox.messages).length, 2)
+    }))
+
   it.live("does not retry an uncertain native batch", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()
@@ -255,6 +310,63 @@ describe("EmailTransport.withFallback", () => {
 
       assert.strictEqual(error._tag, "DeliveryUncertain")
       assert.strictEqual((yield* secondary.attempts).length, 0)
+    }))
+
+  it.effect("revalidates the fallback target before dispatch", () =>
+    Effect.gen(function* () {
+      const primary = yield* RecordingTransport.make({
+        capabilities: { tags: true },
+        script: [{ type: "rejected" }]
+      })
+      const secondary = yield* RecordingTransport.make({
+        capabilities: { tags: false }
+      })
+      const transport = EmailTransport.withFallback(secondary.transport)(
+        primary.transport
+      )
+
+      const error = yield* Email.send({
+        to: "customer@example.com",
+        subject: "Tags",
+        text: "Body",
+        tags: ["billing"]
+      }).pipe(
+        Effect.provide(
+          Email.layer({
+            defaultFrom: "billing@example.com",
+            routes: { default: transport }
+          })
+        ),
+        Effect.flip
+      )
+
+      assert.strictEqual(error._tag, "UnsupportedCapability")
+      assert.strictEqual((yield* secondary.attempts).length, 0)
+    }))
+
+  it.effect("uses the smaller composite batch and recipient limits", () =>
+    Effect.gen(function* () {
+      const primary = yield* RecordingTransport.make({
+        capabilities: {
+          maxBatchSize: 100,
+          maxRecipientsPerMessage: 50
+        }
+      })
+      const secondary = yield* RecordingTransport.make({
+        capabilities: {
+          maxBatchSize: 10,
+          maxRecipientsPerMessage: 20
+        }
+      })
+      const transport = EmailTransport.withFallback(secondary.transport)(
+        primary.transport
+      )
+
+      assert.strictEqual(transport.capabilities.maxBatchSize, 10)
+      assert.strictEqual(
+        transport.capabilities.maxRecipientsPerMessage,
+        20
+      )
     }))
 
   it.effect("does not fail over local capability failures", () =>
