@@ -76,6 +76,37 @@ describe("SubmissionAdmission", () => {
       assert.strictEqual((yield* client.inbox.messages).length, 1)
     }))
 
+  it.effect("rejects invalid messages before queueing", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const invalid = deliveryId("dlv_admission_invalid")
+      const result = yield* Effect.gen(function* () {
+        const admission = yield* SubmissionAdmission.SubmissionAdmission
+        const store = yield* DeliveryStore.DeliveryStore
+        const accepted = yield* Effect.result(
+          admission.accept({
+            ...request,
+            deliveryId: invalid,
+            message: {
+              to: "not-an-email",
+              subject: "Invalid",
+              text: "Body"
+            }
+          })
+        )
+        return {
+          accepted,
+          stored: yield* store.get(invalid)
+        }
+      }).pipe(Effect.provide(layersFor(client)))
+
+      assert.strictEqual(
+        result.accepted._tag === "Failure" &&
+          result.accepted.failure._tag,
+        "InvalidMessage"
+      )
+      assert.isTrue(Option.isNone(result.stored))
+    }))
   it.effect("denies an unauthorized submission before queueing", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

@@ -763,12 +763,16 @@ describe("Submission queue", () => {
       const message = Option.isSome(stored)
         ? stored.value.message
         : undefined
-      assert.strictEqual(
-        message !== undefined && "text" in message
-          ? message.text
-          : undefined,
-        "Snapshot Ada"
-      )
+      const text =
+        message === undefined
+          ? undefined
+          : "text" in message
+            ? message.text
+            : "content" in message &&
+                message.content._tag === "rendered"
+              ? message.content.text
+              : undefined
+      assert.strictEqual(text, "Snapshot Ada")
       assert.strictEqual((yield* client.inbox.messages).length, 1)
     }))
 })

@@ -18,6 +18,7 @@ import type {
   MessageInput,
   TemplateContent
 } from "../Message"
+import { prepare } from "../Message"
 import type { RendererShape } from "../render/Template"
 import { decideRetry } from "../RetryDecision"
 import { Email } from "../Email"
@@ -151,7 +152,16 @@ export const submit = (
 > =>
   Effect.gen(function* () {
     const store = yield* DeliveryStore
-    const message = yield* snapshotMessage(input.message, options.renderer)
+    const snapshot = yield* snapshotMessage(
+      input.message,
+      options.renderer
+    )
+    const message = yield* prepare(snapshot, {
+      from: input.defaultFrom,
+      ...(input.deliveryId === undefined
+        ? {}
+        : { deliveryId: input.deliveryId })
+    })
     const intent = yield* store.createIntent({
       ...input,
       tenantId,

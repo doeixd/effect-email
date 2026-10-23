@@ -9,6 +9,7 @@
     "./Message": "./dist/Message.js",
     "./Email": "./dist/Email.js",
     "./EmailTransport": "./dist/EmailTransport.js",
+    "./Routing": "./dist/Routing.js",
     "./TransportRegistry": "./dist/TransportRegistry.js",
     "./EmailError": "./dist/EmailError.js",
     "./DeliveryStore": "./dist/DeliveryStore.js",

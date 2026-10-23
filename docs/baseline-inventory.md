@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 277 tests across 58 files.
+- `bun run check`: pass, 280 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -33,11 +33,12 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 
 | Area | Entry points | Current behavior | Source |
 | --- | --- | --- | --- |
-| Message preparation | `Message`, `Email.send`, `Email.sendBatch` | Normalizes addresses, validates content, renders templates, checks capabilities | `src/Message.ts`, `src/Email.ts`, `src/render/Template.ts` |
+| Message preparation | `Message`, `Email.send`, `Email.sendBatch`, admission | Normalizes addresses, validates content, renders templates, checks capabilities; admission now uses the same preparation path | `src/Message.ts`, `src/Email.ts`, `src/queue/Submissions.ts`, `src/render/Template.ts` |
 | Direct send | `Email.layer`, `Email.layerTransport`, `Email.send` | Resolves a static route and returns a `SubmissionReceipt` | `src/Email.ts` |
 | Batch and stream | `Email.sendBatch`, `Email.sendStream` | Retains original slot indexes and maps native batches; bounded stream chunks | `src/Email.ts` |
 | Policies | `withRetry`, `withFallback`, `withRoundRobin`, `withTee`, `withRateLimit`, `withCircuitBreaker` | Local policies over transport values; native batch dispatch is preserved by retry; fallback revalidates the secondary; partial batch retry is opt-in | `src/EmailTransport.ts`, `src/Capabilities.ts` |
 | Registry | `TransportRegistry`, `Email.layerFromRegistry`, `Email.layerFromRegistryLayer` | Routes are resolved while the Email layer is built; there is no hot reconfiguration | `src/TransportRegistry.ts`, `src/Email.ts` |
+| Routing diagnostics | `Routing.explain`, `Routing.requirementsOf` | Reports hard requirements, capability rejections, explicit-route exclusions, and preferences without sending | `src/Routing.ts`, `src/Capabilities.ts` |
 | Providers | Provider-specific `make`, layer, client, and transport constructors | 24 provider/infrastructure adapters plus local catchers and `Mock` | `src/providers/` |
 | Admission | `SubmissionAdmission.accept`, `acceptRaw`, `get`, `cancel`, `redrive` | Authorizes, optionally checks suppression, snapshots content, and persists an intent | `src/SubmissionAdmission.ts` |
 | Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, event, cancellation, and retention state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
@@ -114,6 +115,9 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   returns `IdempotencyConflict`. SQL creation uses an atomic insert.
 - Publisher and reconciler process tenant/outbox and stale-claim queries in
   bounded delivery-ID pages rather than scanning all intents.
+- Admission and direct sending share message normalization, validation, and
+  template snapshot rules.
+- Routing diagnostics expose capability reasons without network I/O.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -129,6 +133,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
 | Storage schema is intent-oriented | migrations `0001`-`0006` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |
+| Remote attachment snapshots are not content-addressed | URL attachments remain mutable references | Durable replay can observe changed remote content |
 | No production assembly example | `examples/` contains direct, provider, route, and deployment samples | Operators must infer worker, publisher, reconciler, and shutdown wiring |
 
 These gaps are addressed by the workstreams and PR sequence in

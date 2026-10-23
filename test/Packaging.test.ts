@@ -35,6 +35,7 @@ describe("Package surface", () => {
       "Message",
       "Email",
       "EmailTransport",
+      "Routing",
       "TransportRegistry",
       "EmailError",
       "DeliveryStore",

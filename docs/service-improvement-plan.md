@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `3058b68` (PR 6)
-Status: PR 1-4 and PR 6 complete; PR 5 partial
+Current baseline: `3058b68` plus PR 7
+Status: PR 1-4, 6, and 7 complete; PR 5 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -18,7 +18,8 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 4 | Complete | Pure lifecycle transitions are shared by memory and SQL; SQL transitions no longer use memory restore/snapshot; parity coverage added |
 | 5 | Partial | Atomic claims, atomic SQL creation, tenant storage/indexing, and embedded attempt history are implemented; composite tenant keys and normalized attempt storage remain |
 | 6 | Complete | Publisher and reconciler use bounded tenant/outbox and stale-claim pages with supporting indexes |
-| 7-12 | Not started | See the PR sequence |
+| 7 | Complete | Shared admission preparation, `Routing.explain`, hard requirements, explicit-route diagnostics, and provider-template/registry boundaries documented |
+| 8-12 | Not started | See the PR sequence |
 
 ## 1. Objective
 
@@ -53,6 +54,8 @@ already addressed:
 | Attempts had no exclusive claim | `beginAttempt` acquires `claimId`/`claimExpiresAt`; results from stale claims are rejected |
 | SQL intent creation could overwrite a concurrent insert | SQL uses atomic insert-on-conflict and returns the existing intent or `IdempotencyConflict` |
 | Background work scanned every intent | Publisher/reconciler use tenant and stale-claim pages ordered by delivery ID, with outbox/claim indexes |
+| Admission and direct send validated at different points | Admission uses the same `Message.prepare` path before persisting |
+| Route selection had no diagnostic surface | `Routing.explain` reports requirements, capability reasons, explicit-route exclusions, and preferences without sending |
 
 Still current:
 
@@ -62,7 +65,8 @@ Still current:
   future work.
 - Event waits return the first stored event.
 - Suppression service discovery is optional.
-- Registry routes are captured at layer construction.
+- Registry routes are captured at layer construction; live reconfiguration\n  remains deferred.
+- Remote attachment URLs are not content-addressed for durable replay.
 - There is no complete production assembly example.
 
 ## 3. Target ownership

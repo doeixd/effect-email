@@ -160,12 +160,12 @@ describe("Node SMTP server", () => {
         rcptTo: ["user@example.com"]
       })
       const message = intents[0]!.message
-      assert.isTrue("rawMime" in message)
-      assert.strictEqual(
+      const raw =
         "rawMime" in message
           ? new TextDecoder().decode(message.rawMime)
-          : undefined,
-        "Subject: node\r\n\r\nBody\r\n"
-      )
+          : "content" in message && message.content._tag === "raw"
+            ? new TextDecoder().decode(message.content.mime)
+            : undefined
+      assert.strictEqual(raw, "Subject: node\r\n\r\nBody\r\n")
     }))
 })
