@@ -14,6 +14,8 @@
 - Gateway delivery listings accept bounded tenant, limit, and cursor queries.
 - Memory provider-message lookup now matches SQL by selecting the latest intent.
 - Native batch retry maps provider outcomes by their declared index.
+- Typed event waits fail instead of looping when completed by a non-matching event.
+- Admission snapshots template drafts as well as template message inputs.
 - Fallback invokes the failover callback only after target validation.
 ## 0.3.0
 

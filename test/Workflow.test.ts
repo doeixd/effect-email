@@ -153,6 +153,42 @@ describe("submission workflow", () => {
       assert.strictEqual(event, "delivered")
     }))
 
+  it.live("fails a typed wait completed by a non-matching event", () =>
+    Effect.gen(function* () {
+      const base = Layer.mergeAll(
+        WorkflowEngine.layerMemory,
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory
+      )
+      const workflow = SubmitWorkflow.layerWaitForDeliveryEvent.pipe(
+        Layer.provide(base)
+      )
+
+      const result = yield* Effect.gen(function* () {
+        const fiber = yield* SubmitWorkflow.WaitForDeliveryEvent.execute({
+          tenantId: tenant,
+          deliveryId: delivery,
+          types: ["delivered"]
+        }).pipe(Effect.forkScoped)
+        yield* Effect.yieldNow
+        yield* SubmitWorkflow.completeDeliveryEvent(
+          tenant,
+          delivery,
+          "opened",
+          { types: ["delivered"] }
+        )
+        return yield* Effect.result(Fiber.join(fiber))
+      }).pipe(
+        Effect.timeout("2 seconds"),
+        Effect.provide(Layer.merge(workflow, base)),
+        Effect.scoped
+      )
+
+      assert.strictEqual(
+        result._tag === "Failure" && result.failure._tag,
+        "StoreUnavailable"
+      )
+    }))
   it.live("cancels a delayed submission before admission", () =>
     Effect.gen(function* () {
       const base = SubmissionAdmission.layer({

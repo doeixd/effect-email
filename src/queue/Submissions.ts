@@ -130,23 +130,30 @@ const snapshotMessage = (
   message: MessageInput | MessageDraft,
   renderer: RendererShape | undefined
 ): Effect.Effect<MessageInput | MessageDraft, EmailError> => {
-  if (
-    renderer === undefined ||
-    !("template" in message) ||
-    message.template === undefined
-  ) {
+  const template: TemplateContent | undefined =
+    "content" in message
+      ? message.content._tag === "template"
+        ? message.content
+        : undefined
+      : message.template === undefined
+        ? undefined
+        : {
+            _tag: "template",
+            id: message.template.id,
+            ...(message.template.version === undefined
+              ? {}
+              : { version: message.template.version }),
+            ...(message.template.props === undefined
+              ? {}
+              : { props: message.template.props })
+          }
+  if (renderer === undefined || template === undefined) {
     return Effect.succeed(message)
   }
-  const template = message.template
-  const content: TemplateContent = {
-    _tag: "template",
-    id: template.id,
-    ...(template.version === undefined
-      ? {}
-      : { version: template.version }),
-    ...(template.props === undefined ? {} : { props: template.props })
-  }
-  return Effect.map(renderer.render(content), (rendered) => {
+  return Effect.map(renderer.render(template), (rendered) => {
+    if ("content" in message) {
+      return { ...message, content: rendered }
+    }
     const { template: _template, ...rest } = message
     return {
       ...rest,

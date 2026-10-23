@@ -131,7 +131,7 @@ export const WaitForDeliveryEvent = Workflow.make(
     success: DeliveryEventType,
     error: StoreUnavailable,
     idempotencyKey: (payload) =>
-      `${payload.tenantId}:${payload.deliveryId}:${payload.purpose ?? payload.types?.join(",") ?? "any"}`
+      `${payload.tenantId}:${payload.deliveryId}:${payload.purpose ?? payload.types?.slice().sort().join(",") ?? "any"}`
   }
 )
 
@@ -151,6 +151,14 @@ export const layerWaitForDeliveryEvent =
         if (matches(type)) {
           return type
         }
+        const current = yield* store.listEvents(payload.deliveryId)
+        const matching = current.find((event) => matches(event.type))
+        if (matching !== undefined) {
+          return matching.type
+        }
+        return yield* new StoreUnavailable({
+          message: `delivery event wait completed by non-matching event: ${type}`
+        })
       }
     })
   )

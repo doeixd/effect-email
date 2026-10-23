@@ -25,7 +25,7 @@ Current snapshot after review fixes:
 
 Follow-up snapshot (`6df9dc4`, 0.3.1):
 
-- `bun run check`: 294 passed across 59 files, including PostgreSQL 17
+- `bun run check`: 303 passed across 60 files, including PostgreSQL 17
   integration.
 - Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
 - Native batch dispatch survives `withRetry`.
@@ -1311,7 +1311,7 @@ Status: Fixed.
 ## Test audit
 
 - Full suite after final changes: 244 passed, 1 skipped.
-- Follow-up suite: 294 passed, including PostgreSQL 17 integration.
+- Follow-up suite: 303 passed, including PostgreSQL 17 integration.
 - CI workflow added at `.github/workflows/ci.yml` with a PostgreSQL 16 service.
 - Earlier flake run: three consecutive passes at 232/1 skipped.
 - No flaky failures observed.
