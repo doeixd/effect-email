@@ -202,10 +202,13 @@ export const withRetry =
             break
           }
 
+          const byLocalIndex = new Map(
+            result.success.map((outcome) => [outcome.index, outcome])
+          )
           const retrySlots: typeof pending = []
           const retryDelays: Array<number> = []
           for (const [position, slot] of pending.entries()) {
-            const outcome = result.success[position]
+            const outcome = byLocalIndex.get(position)
             if (outcome === undefined) {
               outcomes.set(
                 slot.index,
@@ -731,9 +734,9 @@ export const withFallback =
       ) {
         return yield* first.failure
       }
-      options.onFailover?.(primary, secondary, first.failure)
       const routed = reroute(envelope, secondary)
       yield* checkCapabilities(secondary, routed.message)
+      options.onFailover?.(primary, secondary, first.failure)
       return yield* secondary.send(routed)
     })
 

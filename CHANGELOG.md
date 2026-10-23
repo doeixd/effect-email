@@ -13,6 +13,8 @@
 - Terminal deliveries reject new attempt claims.
 - Gateway delivery listings accept bounded tenant, limit, and cursor queries.
 - Memory provider-message lookup now matches SQL by selecting the latest intent.
+- Native batch retry maps provider outcomes by their declared index.
+- Fallback invokes the failover callback only after target validation.
 ## 0.3.0
 
 - HTTP provider request failures before a response now surface as
