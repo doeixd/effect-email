@@ -1,7 +1,7 @@
 # Delivery baseline inventory
 
 Date: 2026-10-22
-Baseline: `727e80c`
+Baseline: `9cda629`
 Roadmap: `docs/service-improvement-plan.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 

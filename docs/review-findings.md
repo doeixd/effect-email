@@ -23,7 +23,7 @@ Current snapshot after review fixes:
 - No open Critical/High blockers remain; residual release constraints are listed
   below.
 
-Follow-up snapshot (`727e80c`):
+Follow-up snapshot (`9cda629`):
 
 - `bun run check`: 294 passed across 59 files, including PostgreSQL 17
   integration.
