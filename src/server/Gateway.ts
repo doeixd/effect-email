@@ -187,24 +187,6 @@ const isDiagnostics = (segments: ReadonlyArray<string>): boolean =>
     segments[0] === "v1" &&
     segments[1] === "diagnostics")
 
-const oldest = (
-  intents: ReadonlyArray<DeliveryIntent>
-): string | undefined => {
-  let result: DeliveryIntent | undefined
-  for (const intent of intents) {
-    if (
-      result === undefined ||
-      DateTime.toEpochMillis(intent.updatedAt) <
-        DateTime.toEpochMillis(result.updatedAt)
-    ) {
-      result = intent
-    }
-  }
-  return result === undefined
-    ? undefined
-    : DateTime.formatIso(result.updatedAt)
-}
-
 export interface GatewayOptions {
   readonly maxBodySize?: ByteSize.ByteSize
   readonly authorize?: (
@@ -269,41 +251,39 @@ const makeHandle = (options: GatewayOptions) =>
   }
 
   if (request.method === "GET" && isDiagnostics(segments)) {
-    const [pending, failed, uncertain] = yield* Effect.all(
-      [
-        admission.listPending,
-        admission.listFailed,
-        admission.listUncertain
-      ],
-      { concurrency: "unbounded" }
-    )
-    const oldestPendingAt = oldest(pending)
-    const oldestFailedAt = oldest(failed)
-    const oldestUncertainAt = oldest(uncertain)
+    const summary = yield* admission.statusSummary
+    const entry = (status: string) =>
+      summary.find((item) => item.status === status)
+    const pending = entry("pending")
+    const failed = entry("failed")
+    const uncertain = entry("uncertain")
     return HttpServerResponse.jsonUnsafe({
       queue: {
-        pending: pending.length,
-        ...(oldestPendingAt === undefined
+        pending: pending?.count ?? 0,
+        ...(pending?.oldestUpdatedAt === undefined
           ? {}
-          : { oldestPendingAt })
+          : { oldestPendingAt: DateTime.formatIso(pending.oldestUpdatedAt) })
       },
       deadLetter: {
-        failed: failed.length,
-        ...(oldestFailedAt === undefined
+        failed: failed?.count ?? 0,
+        ...(failed?.oldestUpdatedAt === undefined
           ? {}
-          : { oldestFailedAt })
+          : { oldestFailedAt: DateTime.formatIso(failed.oldestUpdatedAt) })
       },
       parked: {
-        uncertain: uncertain.length,
-        ...(oldestUncertainAt === undefined
+        uncertain: uncertain?.count ?? 0,
+        ...(uncertain?.oldestUpdatedAt === undefined
           ? {}
-          : { oldestUncertainAt })
+          : {
+              oldestUncertainAt: DateTime.formatIso(
+                uncertain.oldestUpdatedAt
+              )
+            })
       }
     })
   }
-
   if (request.method === "GET" && isHealth(segments)) {
-    const checked = yield* Effect.result(admission.listPending)
+    const checked = yield* Effect.result(admission.statusSummary)
     if (checked._tag === "Failure") {
       return errorResponse(checked.failure)
     }

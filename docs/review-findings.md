@@ -56,6 +56,7 @@ Follow-up snapshot (`727e80c`):
 - Added bounded admission and worker counters for operational metrics.
 - Complaint events automatically update suppression when a store is assembled.
 - Added paged provider-lookup reconciliation for uncertain deliveries.
+- Gateway diagnostics/health use grouped status summaries.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.

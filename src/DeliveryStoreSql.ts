@@ -9,7 +9,8 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import type {
   DeliveryEvent,
-  DeliveryIntent
+  DeliveryIntent,
+  DeliveryStatus
 } from "./DeliveryStore"
 import { newDeliveryId } from "./Ids"
 import type { DeliveryId } from "./Ids"
@@ -524,6 +525,28 @@ export const layerSql = (
             Effect.mapError(normalizeError)
           )
         },
+        statusSummary: sql<{
+          readonly status: string
+          readonly count: string | number
+          readonly oldest: string | null
+        }>`SELECT status, COUNT(*) AS count, MIN(updated_at) AS oldest FROM ${sql(
+          intents
+        )} GROUP BY status`.pipe(
+          Effect.map((rows) =>
+            rows.map((row) => ({
+              status: row.status as DeliveryStatus,
+              count: Number(row.count),
+              ...(row.oldest === null
+                ? {}
+                : {
+                    oldestUpdatedAt: DateTime.makeUnsafe(
+                      new Date(row.oldest)
+                    )
+                  })
+            }))
+          ),
+          Effect.mapError(normalizeError)
+        ),
         listUncertainPage: (options) => {
           const after =
             options.after === undefined

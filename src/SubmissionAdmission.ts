@@ -15,7 +15,8 @@ import type {
   CancellationOutcome,
   DeliveryEvent,
   DeliveryIntent,
-  DeliveryStatus
+  DeliveryStatus,
+  DeliveryStatusSummary
 } from "./DeliveryStore"
 import { DeliveryStore } from "./DeliveryStore"
 import type { MailboxInput, MessageDraft, MessageInput } from "./Message"
@@ -94,6 +95,10 @@ export interface SubmissionAdmissionShape {
   >
   readonly listPending: Effect.Effect<
     ReadonlyArray<DeliveryIntent>,
+    StoreUnavailable
+  >
+  readonly statusSummary: Effect.Effect<
+    ReadonlyArray<DeliveryStatusSummary>,
     StoreUnavailable
   >
   readonly listForTenant: (options: {
@@ -412,6 +417,7 @@ export const make = (
       listUncertain: store.listUncertain,
       listFailed: store.listFailed,
       listPending: store.listPending,
+      statusSummary: store.statusSummary,
       listForTenant: store.listForTenant,
       appendProviderEvent,
       listEvents: store.listEvents

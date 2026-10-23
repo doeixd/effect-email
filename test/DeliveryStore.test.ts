@@ -328,6 +328,30 @@ describe("DeliveryStore", () => {
         "provider confirmed non-delivery"
       )
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("summarizes status counts without loading all intents", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const pending = deliveryId("dlv_summary_pending")
+      const failed = deliveryId("dlv_summary_failed")
+      yield* store.createIntent({ ...input, deliveryId: pending })
+      yield* store.createIntent({ ...input, deliveryId: failed })
+      yield* store.beginAttempt(failed, 1)
+      yield* store.recordFailed(
+        failed,
+        1,
+        new StoreUnavailable({ message: "failed" })
+      )
+      const summary = yield* store.statusSummary
+      const count = (status: string) =>
+        summary.find((item) => item.status === status)?.count
+
+      assert.strictEqual(count("pending"), 1)
+      assert.strictEqual(count("failed"), 1)
+      assert.isDefined(
+        summary.find((item) => item.status === "failed")
+          ?.oldestUpdatedAt
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("correlates and projects provider events deterministically", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore.DeliveryStore

@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 294 tests across 59 files.
+- `bun run check`: pass, 296 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -136,6 +136,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   acceptance, rejection, uncertainty, retries, and failures.
 - `Submissions.reconcileUncertain` pages uncertain intents and applies provider
   lookup results as correlated events.
+- Gateway diagnostics and health use grouped status counts instead of loading
+  all pending, failed, and uncertain intents.
 - Provider support is labeled by evidence in `docs/provider-support.md`; SMTP
   covers slow clients and invalid-command recovery.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
@@ -150,7 +152,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Typed event completion is caller-scoped | `workflow/Submissions.ts` | A typed wait must be completed with the same type/purpose scope |
 | Suppression discovery is optional | Admission and worker use `serviceOption` | A production assembly can accidentally omit enforcement |
 | Bounce suppression is policy-gated | Complaints suppress automatically; bounces require `suppressOnEvents` | Soft bounces are not suppressed by default |
-| Legacy diagnostics still use unbounded scans | Gateway/catcher `listAll` paths | New tenant-scoped paging exists, but the legacy endpoints are not migrated |
+| Development catcher still uses `listAll` | `server/Catcher.ts` is development-only | Not suitable as a production listing endpoint |
 | Provider lookup is caller-supplied | `reconcileUncertain` accepts a lookup function | No universal provider-status mapping or automatic schedule |
 | No live provider sandbox suite | Contract tests use local fixtures | Sandbox parity remains release hardening |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |

@@ -67,6 +67,8 @@
 - Verified complaint events automatically suppress recipients when a suppression
   store is assembled; bounce suppression is opt-in.
 - Added `Submissions.reconcileUncertain` for paged provider-lookup reconciliation.
+- Gateway diagnostics and health now use grouped status counts instead of loading
+  all pending, failed, and uncertain intents.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

@@ -85,6 +85,11 @@ export const DeliveryEvent = Schema.Struct({
 })
 export type DeliveryEvent = typeof DeliveryEvent.Type
 
+export interface DeliveryStatusSummary {
+  readonly status: DeliveryStatus
+  readonly count: number
+  readonly oldestUpdatedAt?: DateTime.Utc
+}
 export interface DeliveryStorePruneOptions {
   readonly intentsBefore?: DateTime.Utc
   readonly eventsBefore?: DateTime.Utc
@@ -274,6 +279,10 @@ export interface DeliveryStoreShape {
     readonly limit: number
     readonly after?: DeliveryId
   }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
+  readonly statusSummary: Effect.Effect<
+    ReadonlyArray<DeliveryStatusSummary>,
+    StoreUnavailable
+  >
   readonly listForTenant: (options: {
     readonly tenantId: TenantId
     readonly status?: DeliveryStatus
@@ -767,6 +776,32 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
             )
             .slice(0, options.limit)
         ),
+      statusSummary: Effect.map(Ref.get(state), (intents) => {
+        const grouped = new Map<
+          DeliveryStatus,
+          { count: number; oldestUpdatedAt?: DateTime.Utc }
+        >()
+        for (const intent of intents.values()) {
+          const current = grouped.get(intent.status)
+          const oldest =
+            current?.oldestUpdatedAt === undefined ||
+            DateTime.toEpochMillis(intent.updatedAt) <
+              DateTime.toEpochMillis(current.oldestUpdatedAt)
+              ? intent.updatedAt
+              : current.oldestUpdatedAt
+          grouped.set(intent.status, {
+            count: (current?.count ?? 0) + 1,
+            oldestUpdatedAt: oldest
+          })
+        }
+        return [...grouped.entries()].map(([status, value]) => ({
+          status,
+          count: value.count,
+          ...(value.oldestUpdatedAt === undefined
+            ? {}
+            : { oldestUpdatedAt: value.oldestUpdatedAt })
+        }))
+      }),
       listUncertainPage: (options) =>
         Effect.map(Ref.get(state), (intents) =>
           [...intents.values()]

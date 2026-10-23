@@ -126,6 +126,27 @@ describe("DeliveryStore SQL", () => {
       )
       assert.strictEqual(allowed.status, "pending")
     }).pipe(Effect.provide(layer)))
+  it.effect("summarizes delivery status counts", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore
+      const id = deliveryId("dlv_sql_summary")
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordFailed(
+        id,
+        1,
+        new TransportUnavailable({
+          message: "failed",
+          provider: "mock"
+        })
+      )
+      const summary = yield* store.statusSummary
+
+      assert.strictEqual(
+        summary.find((item) => item.status === "failed")?.count,
+        1
+      )
+    }).pipe(Effect.provide(layer)))
   it.effect("pages tenant queries and records redrive audit", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore

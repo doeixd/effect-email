@@ -3,7 +3,7 @@
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
 Current baseline: `727e80c`
-Status: PR 1-4 and 6-8 complete; PR 5, 9, 10, 11, and 12 partial
+Status: PR 1-4 and 6-8 complete; PR 5, 9, 10, and 12 partial; PR 11 complete
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -22,7 +22,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 8 | Complete | Events correlate through receipt message IDs and destination, preserve ingestion time, and project deterministically without regressing terminal state |
 | 9 | Partial | Typed event waits, dispatch-time suppression, automatic complaint suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; bounce policy and wait deadlines remain |
 | 10 | Partial | PostgreSQL service example, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; typed configuration errors and the optional runtime helper remain |
-| 11 | Partial | Tenant/status paging, redrive audit, retention safety, metrics, provider-lookup reconciliation, and operations docs are implemented; legacy diagnostic scans remain |
+| 11 | Complete | Tenant/status paging, redrive audit, retention safety, metrics, provider-lookup reconciliation, grouped diagnostics, and operations docs are implemented |
 | 12 | Partial | Provider evidence matrix, SMTP slow-client/invalid-command coverage, dependency strategy, release guidance, and tarball smoke added; live sandbox tests remain |
 
 ## 1. Objective
@@ -81,7 +81,6 @@ Still current:
   remains deferred.
 - Remote attachment URLs are not content-addressed for durable replay.
 - Some startup configuration failures are still defects rather than typed errors.
-- Legacy diagnostics still use unbounded scans.
 - No live provider sandbox suite is enabled.
 
 ## 3. Target ownership
