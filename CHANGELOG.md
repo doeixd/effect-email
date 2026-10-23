@@ -46,6 +46,12 @@
 - Event projection is deterministic: older events and contradictory terminal
   events are stored but cannot regress delivery status.
 - `0007_event_correlation.sql` adds and backfills the provider message ID index.
+- `WaitForDeliveryEvent` accepts explicit event types and re-checks stored events
+  before blocking.
+- The worker re-checks suppression immediately before dispatch.
+- Cancellation returns `canceled-before-dispatch`, `cancellation-requested`, or
+  `already-submitted`; uncertain redrive requires explicit duplicate-risk
+  acknowledgment.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

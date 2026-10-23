@@ -4,7 +4,11 @@ import type { DeliveryId, RouteName, TenantId } from "./Ids"
 import { gatewaySubmissionId } from "./Ids"
 import type { EmailError } from "./EmailError"
 import { InvalidMessage, RecipientSuppressed, StoreUnavailable } from "./EmailError"
-import type { DeliveryEvent, DeliveryIntent } from "./DeliveryStore"
+import type {
+  CancellationOutcome,
+  DeliveryEvent,
+  DeliveryIntent
+} from "./DeliveryStore"
 import { DeliveryStore } from "./DeliveryStore"
 import type { MailboxInput, MessageDraft, MessageInput } from "./Message"
 import { parseMailbox } from "./Message"
@@ -58,12 +62,13 @@ export interface SubmissionAdmissionShape {
   ) => Effect.Effect<Option.Option<DeliveryIntent>, StoreUnavailable>
   readonly cancel: (
     deliveryId: DeliveryId
-  ) => Effect.Effect<void, StoreUnavailable>
+  ) => Effect.Effect<CancellationOutcome, StoreUnavailable>
   readonly isCancellationRequested: (
     deliveryId: DeliveryId
   ) => Effect.Effect<boolean, StoreUnavailable>
   readonly redrive: (
-    deliveryId: DeliveryId
+    deliveryId: DeliveryId,
+    options?: { readonly acknowledgeDuplicateRisk?: boolean }
   ) => Effect.Effect<AdmissionReceipt, EmailError>
   readonly listUncertain: Effect.Effect<
     ReadonlyArray<DeliveryIntent>,
@@ -226,7 +231,12 @@ export const make = (
     })
 
     const redrive = Effect.fn("SubmissionAdmission.redrive")(
-      function* (deliveryId: DeliveryId) {
+      function* (
+        deliveryId: DeliveryId,
+        options: {
+          readonly acknowledgeDuplicateRisk?: boolean
+        } = {}
+      ) {
         const stored = yield* store.get(deliveryId)
         if (Option.isNone(stored)) {
           return yield* new StoreUnavailable({
@@ -244,7 +254,7 @@ export const make = (
           tenantId: intent.tenantId,
           deliveryId,
           dispatchGeneration: intent.dispatchGeneration
-        }).pipe(
+        }, options).pipe(
           Effect.provideService(DeliveryStore, store),
           Effect.mapError(submissionError)
         )

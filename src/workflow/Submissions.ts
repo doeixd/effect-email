@@ -117,7 +117,9 @@ export const DeliveryEventDeferred = DurableDeferred.make(
 
 export const DeliveryEventWaitPayload = Schema.Struct({
   tenantId: TenantIdSchema,
-  deliveryId: DeliveryIdSchema
+  deliveryId: DeliveryIdSchema,
+  types: Schema.optionalKey(Schema.Array(DeliveryEventType)),
+  purpose: Schema.optionalKey(Schema.NonEmptyString)
 })
 export type DeliveryEventWaitPayload =
   typeof DeliveryEventWaitPayload.Type
@@ -129,7 +131,7 @@ export const WaitForDeliveryEvent = Workflow.make(
     success: DeliveryEventType,
     error: StoreUnavailable,
     idempotencyKey: (payload) =>
-      `${payload.tenantId}:${payload.deliveryId}`
+      `${payload.tenantId}:${payload.deliveryId}:${payload.purpose ?? payload.types?.join(",") ?? "any"}`
   }
 )
 
@@ -137,23 +139,36 @@ export const layerWaitForDeliveryEvent =
   WaitForDeliveryEvent.toLayer((payload) =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore
-      const events = yield* store.listEvents(payload.deliveryId)
-      const existing = events[0]
-      if (existing !== undefined) {
-        return existing.type
+      const matches = (type: typeof DeliveryEventType.Type) =>
+        payload.types === undefined || payload.types.includes(type)
+      while (true) {
+        const events = yield* store.listEvents(payload.deliveryId)
+        const existing = events.find((event) => matches(event.type))
+        if (existing !== undefined) {
+          return existing.type
+        }
+        const type = yield* DurableDeferred.await(DeliveryEventDeferred)
+        if (matches(type)) {
+          return type
+        }
       }
-      return yield* DurableDeferred.await(DeliveryEventDeferred)
     })
   )
 
 export const interruptDeliveryEventWait = (
   tenantId: typeof TenantIdSchema.Type,
-  deliveryId: typeof DeliveryIdSchema.Type
+  deliveryId: typeof DeliveryIdSchema.Type,
+  options: {
+    readonly types?: ReadonlyArray<typeof DeliveryEventType.Type>
+    readonly purpose?: string
+  } = {}
 ) =>
   Effect.gen(function* () {
     const executionId = yield* WaitForDeliveryEvent.executionId({
       tenantId,
-      deliveryId
+      deliveryId,
+      ...(options.types === undefined ? {} : { types: options.types }),
+      ...(options.purpose === undefined ? {} : { purpose: options.purpose })
     })
     const engine = yield* WorkflowEngine.WorkflowEngine
     yield* engine.interrupt(WaitForDeliveryEvent, executionId)
@@ -162,12 +177,18 @@ export const interruptDeliveryEventWait = (
 export const completeDeliveryEvent = (
   tenantId: typeof TenantIdSchema.Type,
   deliveryId: typeof DeliveryIdSchema.Type,
-  type: typeof DeliveryEventType.Type
+  type: typeof DeliveryEventType.Type,
+  options: {
+    readonly types?: ReadonlyArray<typeof DeliveryEventType.Type>
+    readonly purpose?: string
+  } = {}
 ) =>
   Effect.gen(function* () {
     const executionId = yield* WaitForDeliveryEvent.executionId({
       tenantId,
-      deliveryId
+      deliveryId,
+      ...(options.types === undefined ? {} : { types: options.types }),
+      ...(options.purpose === undefined ? {} : { purpose: options.purpose })
     })
     const engine = yield* WorkflowEngine.WorkflowEngine
     yield* engine.deferredDone(DeliveryEventDeferred, {

@@ -407,10 +407,13 @@ export const layerSql = (
             .withTransaction(
               Effect.gen(function* () {
                 const rows = yield* selectIntent(deliveryId)
-                if (rows[0] !== undefined) {
-                  const existing = decode(
-                    JSON.parse(rows[0].data)
-                  ) as DeliveryIntent
+                const existing =
+                  rows[0] === undefined
+                    ? undefined
+                    : (decode(
+                        JSON.parse(rows[0].data)
+                      ) as DeliveryIntent)
+                if (existing !== undefined) {
                   yield* saveIntent(
                     Transitions.requestCancellation(
                       existing,
@@ -419,6 +422,7 @@ export const layerSql = (
                   )
                 }
                 yield* saveCancellation(deliveryId)
+                return Transitions.cancellationOutcome(existing)
               })
             )
             .pipe(Effect.mapError(normalizeError)),        isCancellationRequested: (deliveryId) =>
@@ -447,12 +451,19 @@ export const layerSql = (
               decode(JSON.parse(rows[0].data)) as DeliveryIntent
             ).cancellationRequested
           }),
-        redrive: (deliveryId) =>
+        redrive: (deliveryId, options) =>
           runTransition(
             deliveryId,
-            (intent, now) => Transitions.redrive(intent, now),
+            (intent, now) =>
+              intent.status === "uncertain" &&
+              options?.acknowledgeDuplicateRisk !== true
+                ? new StoreUnavailable({
+                    message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
+                  })
+                : Transitions.redrive(intent, now),
             true
-          ),        listUncertain: intentsByStatus("uncertain").pipe(
+          ),
+        listUncertain: intentsByStatus("uncertain").pipe(
           Effect.mapError(normalizeError)
         ),
         listPending: intentsByStatus("pending").pipe(

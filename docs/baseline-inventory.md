@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 282 tests across 59 files.
+- `bun run check`: pass, 286 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -43,7 +43,7 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 | Admission | `SubmissionAdmission.accept`, `acceptRaw`, `get`, `cancel`, `redrive` | Authorizes, optionally checks suppression, snapshots content, and persists an intent | `src/SubmissionAdmission.ts` |
 | Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, correlated event, cancellation, and retention state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
 | Queue and recovery | `src/queue/Submissions.ts` | Persisted submission jobs, bounded publisher and stale-claim pages, worker, reconciliation, redrive | `src/queue/Submissions.ts` |
-| Workflows | `SubmitAfterDelay`, `WaitForDeliveryEvent` | Durable delay and event waiting on `WorkflowEngine` | `src/workflow/Submissions.ts` |
+| Workflows | `SubmitAfterDelay`, `WaitForDeliveryEvent` | Durable delay and typed event matching on `WorkflowEngine`; waits re-check stored events before blocking | `src/workflow/Submissions.ts` |
 | Gateway and SMTP | `Gateway`, `Catcher`, `Smtp` client/server | Authenticated submission paths with deny-by-default gateway/catcher authorization | `src/server/`, `src/smtp/` |
 | Suppression | `SuppressionStore` | Admission-time check when a suppression store is present | `src/Suppression.ts` |
 | Retention | `DeliveryStore.prune` | Prunes intents/events by time; does not yet model content/attempt/event retention separately | `src/DeliveryStore.ts` |
@@ -121,6 +121,11 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 - Provider events correlate by receipt provider message ID and destination, and
   deterministic projection prevents older or contradictory events from
   regressing terminal delivery state.
+- Event waits can require explicit event types and re-check stored events before
+  blocking.
+- The worker re-checks suppression immediately before dispatch.
+- Cancellation reports `canceled-before-dispatch`, `cancellation-requested`, or
+  `already-submitted`; uncertain redrive requires duplicate-risk acknowledgment.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -130,8 +135,9 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Gap | Current evidence | Consequence |
 | --- | --- | --- |
 | Tenant identity is stored but not required for lookup | `DeliveryIntent.tenantId`, `tenant_id` column | A caller can still address a delivery without tenant scoping |
-| Event wait uses the first stored event | `workflow/Submissions.ts` | An unrelated open/click event can satisfy the wait |
-| Suppression discovery is optional | `SubmissionAdmission` uses `serviceOption` | A production assembly can accidentally omit enforcement |
+| Typed event completion is caller-scoped | `workflow/Submissions.ts` | A typed wait must be completed with the same type/purpose scope |
+| Suppression discovery is optional | Admission and worker use `serviceOption` | A production assembly can accidentally omit enforcement |
+| Hard-bounce/complaint auto-suppression is not automatic | Verified events are stored and projected | Operators must apply suppression policy explicitly |
 | Diagnostics still use unbounded scans | `listAll` in gateway/catcher paths | Operator diagnostics can grow with total history until PR 11 |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |

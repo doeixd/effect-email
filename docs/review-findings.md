@@ -25,7 +25,7 @@ Current snapshot after review fixes:
 
 Follow-up snapshot (`17efb02`):
 
-- `bun run check`: 282 passed across 59 files, including PostgreSQL 17
+- `bun run check`: 286 passed across 59 files, including PostgreSQL 17
   integration.
 - Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
 - Native batch dispatch survives `withRetry`.
@@ -45,6 +45,9 @@ Follow-up snapshot (`17efb02`):
   reports capability and explicit-route diagnostics without sending.
 - Provider events correlate by receipt message ID/destination and project
   deterministically; older or contradictory events cannot regress terminal state.
+- Typed event waits re-check stored history; dispatch re-checks suppression;
+  cancellation returns explicit outcomes and uncertain redrive requires
+  duplicate-risk acknowledgment.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
@@ -1297,7 +1300,7 @@ Status: Fixed.
 ## Test audit
 
 - Full suite after final changes: 244 passed, 1 skipped.
-- Follow-up suite: 282 passed, including PostgreSQL 17 integration.
+- Follow-up suite: 286 passed, including PostgreSQL 17 integration.
 - CI workflow added at `.github/workflows/ci.yml` with a PostgreSQL 16 service.
 - Earlier flake run: three consecutive passes at 232/1 skipped.
 - No flaky failures observed.

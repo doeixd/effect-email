@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `17efb02` (PR 8)
-Status: PR 1-4 and 6-8 complete; PR 5 partial
+Current baseline: `17efb02` plus PR 9
+Status: PR 1-4 and 6-8 complete; PR 5 and PR 9 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -20,7 +20,8 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 6 | Complete | Publisher and reconciler use bounded tenant/outbox and stale-claim pages with supporting indexes |
 | 7 | Complete | Shared admission preparation, `Routing.explain`, hard requirements, explicit-route diagnostics, and provider-template/registry boundaries documented |
 | 8 | Complete | Events correlate through receipt message IDs and destination, preserve ingestion time, and project deterministically without regressing terminal state |
-| 9-12 | Not started | See the PR sequence |
+| 9 | Partial | Typed event waits, dispatch-time suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; automatic hard-bounce suppression and wait deadlines remain |
+| 10-12 | Not started | See the PR sequence |
 
 ## 1. Objective
 
@@ -58,6 +59,9 @@ already addressed:
 | Admission and direct send validated at different points | Admission uses the same `Message.prepare` path before persisting |
 | Route selection had no diagnostic surface | `Routing.explain` reports requirements, capability reasons, explicit-route exclusions, and preferences without sending |
 | Provider events trusted caller-supplied delivery IDs and could regress state | Events correlate by receipt message ID/destination and project only allowed, newer outcomes |
+| Event waits matched the first stored event | Waits can require explicit event types and re-check stored history |
+| Suppression was checked only at admission | The worker re-checks suppression immediately before dispatch |
+| Cancellation and redrive lacked truthful outcomes | Cancellation returns explicit outcomes; uncertain redrive requires duplicate-risk acknowledgment |
 
 Still current:
 
@@ -65,8 +69,9 @@ Still current:
   key and the API does not require tenant scoping.
 - Attempt history is embedded in intent JSON; a normalized attempt table remains
   future work.
-- Event waits return the first stored event.
-- Suppression service discovery is optional.
+- Suppression service discovery remains optional; production assembly must
+  enforce it.
+- Automatic hard-bounce/complaint suppression and typed-wait deadlines remain.
 - Registry routes are captured at layer construction; live reconfiguration
   remains deferred.
 - Remote attachment URLs are not content-addressed for durable replay.

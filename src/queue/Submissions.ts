@@ -9,6 +9,7 @@ import type { EmailError } from "../EmailError"
 import {
   certaintyOf,
   DeliveryUncertain,
+  RecipientSuppressed,
   StoreUnavailable
 } from "../EmailError"
 import type { CreateDeliveryIntent } from "../DeliveryStore"
@@ -18,7 +19,8 @@ import type {
   MessageInput,
   TemplateContent
 } from "../Message"
-import { prepare } from "../Message"
+import { parseMailbox, prepare } from "../Message"
+import { SuppressionStore } from "../Suppression"
 import type { RendererShape } from "../render/Template"
 import { decideRetry } from "../RetryDecision"
 import { Email } from "../Email"
@@ -87,7 +89,8 @@ export const layerCleanup = PersistedQueue.layerCleanup
 
 export const redrive = (
   queue: PersistedQueue.PersistedQueue<SubmissionJob>,
-  job: SubmissionJob
+  job: SubmissionJob,
+  options: { readonly acknowledgeDuplicateRisk?: boolean } = {}
 ): Effect.Effect<
   string,
   EmailError | PersistedQueue.PersistedQueueError | Schema.SchemaError,
@@ -95,7 +98,7 @@ export const redrive = (
 > =>
   Effect.gen(function* () {
     const store = yield* DeliveryStore
-    const intent = yield* store.redrive(job.deliveryId)
+    const intent = yield* store.redrive(job.deliveryId, options)
     return yield* offer(queue, {
       version: 1,
       tenantId: job.tenantId,
@@ -248,6 +251,35 @@ export const runPublisher = (options: {
     })
   )
 
+const recipientsOf = (
+  message: MessageInput | MessageDraft
+): ReadonlyArray<string> => {
+  if ("content" in message) {
+    return [
+      ...message.to,
+      ...message.cc,
+      ...message.bcc
+    ].map((address) => address.address)
+  }
+  const parse = (
+    value: MessageInput["to"] | undefined
+  ): ReadonlyArray<string> => {
+    if (value === undefined) {
+      return []
+    }
+    const list = Array.isArray(value) ? value : [value]
+    return list.flatMap((item) => {
+      const parsed = parseMailbox(item)
+      return parsed._tag === "ok" ? [parsed.value.address] : []
+    })
+  }
+  return [
+    ...parse(message.to),
+    ...parse(message.cc),
+    ...parse(message.bcc)
+  ]
+}
+
 const terminal = (
   status:
     | "pending"
@@ -316,6 +348,25 @@ export const processSubmission = (
         terminal(refreshed.value.status) ||
         refreshed.value.cancellationRequested
       ) {
+        return
+      }
+    }
+
+    const suppression = yield* Effect.serviceOption(SuppressionStore)
+    if (Option.isSome(suppression)) {
+      const blocked = yield* suppression.value.suppressed(
+        job.tenantId,
+        recipientsOf(intent.message)
+      )
+      if (blocked.length > 0) {
+        yield* store.recordFailed(
+          job.deliveryId,
+          job.dispatchGeneration,
+          new RecipientSuppressed({
+            message: `recipient is suppressed: ${blocked.join(", ")}`,
+            recipients: blocked
+          })
+        )
         return
       }
     }

@@ -27,6 +27,10 @@ import type { MailboxInput, MessageDraft, MessageInput } from "./Message"
 import type { SubmissionReceipt } from "./Submission"
 import * as Transitions from "./DeliveryTransitions"
 
+export type CancellationOutcome =
+  | "canceled-before-dispatch"
+  | "cancellation-requested"
+  | "already-submitted"
 export type DeliveryStatus =
   | "pending"
   | "in-progress"
@@ -210,12 +214,13 @@ export interface DeliveryStoreShape {
   ) => Effect.Effect<void, StoreUnavailable>
   readonly requestCancellation: (
     deliveryId: DeliveryId
-  ) => Effect.Effect<void, StoreUnavailable>
+  ) => Effect.Effect<CancellationOutcome, StoreUnavailable>
   readonly isCancellationRequested: (
     deliveryId: DeliveryId
   ) => Effect.Effect<boolean, StoreUnavailable>
   readonly redrive: (
-    deliveryId: DeliveryId
+    deliveryId: DeliveryId,
+    options?: { readonly acknowledgeDuplicateRisk?: boolean }
   ) => Effect.Effect<DeliveryIntent, StoreUnavailable>
   readonly listAll: Effect.Effect<
     ReadonlyArray<DeliveryIntent>,
@@ -501,6 +506,9 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           )
           return next
         })
+        return Transitions.cancellationOutcome(
+          (yield* Ref.get(state)).get(deliveryId)
+        )
       })
 
     const isCancellationRequested: DeliveryStoreShape["isCancellationRequested"] =
@@ -513,7 +521,10 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           return intent?.cancellationRequested === true
         })
 
-    const redrive: DeliveryStoreShape["redrive"] = (deliveryId) =>
+    const redrive: DeliveryStoreShape["redrive"] = (
+      deliveryId,
+      options
+    ) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now
         const result = yield* Ref.modify(
@@ -527,6 +538,17 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
             const intent = intents.get(deliveryId)
             if (intent === undefined) {
               return [Transitions.missingIntent(deliveryId), intents]
+            }
+            if (
+              intent.status === "uncertain" &&
+              options?.acknowledgeDuplicateRisk !== true
+            ) {
+              return [
+                new StoreUnavailable({
+                  message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
+                }),
+                intents
+              ]
             }
             const nextIntent = Transitions.redrive(intent, now)
             const next = new Map(intents)

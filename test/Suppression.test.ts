@@ -94,6 +94,50 @@ describe("SuppressionStore", () => {
       assert.strictEqual(pruned, 1)
     }).pipe(Effect.provide(sqlLayer)))
 
+  it.effect("blocks newly suppressed recipients before dispatch", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const id = deliveryId("dlv_suppressed_dispatch")
+      const shared = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Suppression.layerMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: client.transport }
+        })
+      )
+
+      const stored = yield* Effect.gen(function* () {
+        const queue = yield* Submissions.make()
+        const store = yield* DeliveryStore.DeliveryStore
+        const suppression = yield* Suppression.SuppressionStore
+        yield* Submissions.submit(queue, tenant, {
+          deliveryId: id,
+          defaultFrom: "billing@example.com",
+          message: {
+            to: "late@example.com",
+            subject: "Late suppression",
+            text: "Body"
+          }
+        })
+        yield* suppression.suppress({
+          tenantId: tenant,
+          recipient: "late@example.com"
+        })
+        yield* queue.take((job, metadata) =>
+          Submissions.processSubmission(job, metadata)
+        )
+        return yield* store.get(id)
+      }).pipe(Effect.provide(shared))
+
+      assert.isTrue(Option.isSome(stored))
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "failed"
+      )
+      assert.strictEqual((yield* client.inbox.messages).length, 0)
+    }))
   it.effect("blocks admission for suppressed recipients", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

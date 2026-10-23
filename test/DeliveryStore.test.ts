@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Option } from "effect"
 import * as DeliveryStore from "../src/DeliveryStore"
-import { StoreUnavailable } from "../src/EmailError"
+import { DeliveryUncertain, StoreUnavailable } from "../src/EmailError"
 import {
   attemptId,
   deliveryId,
@@ -210,6 +210,54 @@ describe("DeliveryStore", () => {
         conflict._tag === "Failure" && conflict.failure._tag,
         "IdempotencyConflict"
       )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("reports cancellation outcomes and requires redrive acknowledgment", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const pendingId = deliveryId("dlv_cancel_pending")
+      const activeId = deliveryId("dlv_cancel_active")
+      const acceptedId = deliveryId("dlv_cancel_accepted")
+      const uncertainId = deliveryId("dlv_cancel_uncertain")
+
+      for (const id of [pendingId, activeId, acceptedId, uncertainId]) {
+        yield* store.createIntent({ ...input, deliveryId: id })
+      }
+      yield* store.beginAttempt(activeId, 1)
+      yield* store.beginAttempt(acceptedId, 1)
+      yield* store.recordAccepted(acceptedId, 1, makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(
+          makeDestination({ provider: "mock", account: "default" })
+        ),
+        deliveryId: acceptedId,
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      }))
+      yield* store.beginAttempt(uncertainId, 1)
+      yield* store.recordUncertain(
+        uncertainId,
+        1,
+        new DeliveryUncertain({
+          message: "unknown",
+          provider: "mock"
+        })
+      )
+
+      const pending = yield* store.requestCancellation(pendingId)
+      const active = yield* store.requestCancellation(activeId)
+      const accepted = yield* store.requestCancellation(acceptedId)
+      const blocked = yield* Effect.result(store.redrive(uncertainId))
+      const allowed = yield* store.redrive(uncertainId, {
+        acknowledgeDuplicateRisk: true
+      })
+
+      assert.strictEqual(pending, "canceled-before-dispatch")
+      assert.strictEqual(active, "cancellation-requested")
+      assert.strictEqual(accepted, "already-submitted")
+      assert.strictEqual(
+        blocked._tag === "Failure" && blocked.failure._tag,
+        "StoreUnavailable"
+      )
+      assert.strictEqual(allowed.status, "pending")
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("correlates and projects provider events deterministically", () =>
     Effect.gen(function* () {

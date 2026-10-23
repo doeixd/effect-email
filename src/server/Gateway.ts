@@ -467,7 +467,12 @@ const makeHandle = (options: GatewayOptions) =>
 
   if (request.method === "POST" && targetRedrive !== undefined) {
     const redriven = yield* Effect.result(
-      admission.redrive(makeDeliveryId(targetRedrive))
+      admission.redrive(makeDeliveryId(targetRedrive), {
+        acknowledgeDuplicateRisk:
+          request.headers[
+            "x-effect-email-acknowledge-duplicate-risk"
+          ] === "true"
+      })
     )
     if (redriven._tag === "Failure") {
       return errorResponse(redriven.failure)
@@ -526,7 +531,11 @@ const makeHandle = (options: GatewayOptions) =>
       return errorResponse(canceled.failure)
     }
     return HttpServerResponse.jsonUnsafe(
-      { deliveryId: id, cancellationRequested: true },
+      {
+        deliveryId: id,
+        cancellationRequested: true,
+        outcome: canceled.success
+      },
       { status: 202 }
     )
   }

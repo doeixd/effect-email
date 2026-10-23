@@ -82,6 +82,46 @@ describe("submission workflow", () => {
       assert.strictEqual(event, "delivered")
     }))
 
+  it.live("matches explicit event types before and during the wait", () =>
+    Effect.gen(function* () {
+      const base = Layer.mergeAll(
+        WorkflowEngine.layerMemory,
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory
+      )
+      const workflow = SubmitWorkflow.layerWaitForDeliveryEvent.pipe(
+        Layer.provide(base)
+      )
+
+      const event = yield* Effect.gen(function* () {
+        const store = yield* DeliveryStore.DeliveryStore
+        yield* store.appendProviderEvent({
+          id: "evt_opened_before_wait",
+          deliveryId: delivery,
+          type: "opened",
+          occurredAt: yield* DateTime.now
+        })
+        const fiber = yield* SubmitWorkflow.WaitForDeliveryEvent.execute({
+          tenantId: tenant,
+          deliveryId: delivery,
+          types: ["delivered"]
+        }).pipe(Effect.forkScoped)
+        yield* Effect.yieldNow
+        yield* SubmitWorkflow.completeDeliveryEvent(
+          tenant,
+          delivery,
+          "delivered",
+          { types: ["delivered"] }
+        )
+        return yield* Fiber.join(fiber)
+      }).pipe(
+        Effect.timeout("2 seconds"),
+        Effect.provide(Layer.merge(workflow, base)),
+        Effect.scoped
+      )
+
+      assert.strictEqual(event, "delivered")
+    }))
   it.live("uses a provider event that arrived before the wait", () =>
     Effect.gen(function* () {
       const base = Layer.mergeAll(

@@ -10,7 +10,10 @@ import {
   providerMessageId,
   tenantId
 } from "../src/Ids"
-import { TransportUnavailable } from "../src/EmailError"
+import {
+  DeliveryUncertain,
+  TransportUnavailable
+} from "../src/EmailError"
 import { makeReceipt } from "../src/Submission"
 
 const target = deliveryId("dlv_sql_store_1")
@@ -93,6 +96,36 @@ describe("DeliveryStore SQL", () => {
       assert.strictEqual((yield* store.listEvents(target)).length, 0)
     }).pipe(Effect.provide(layer)))
 
+  it.effect("reports cancellation outcomes and gates uncertain redrive", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore
+      const pendingId = deliveryId("dlv_sql_cancel_pending")
+      const uncertainId = deliveryId("dlv_sql_cancel_uncertain")
+      yield* store.createIntent({ ...input, deliveryId: pendingId })
+      yield* store.createIntent({ ...input, deliveryId: uncertainId })
+      yield* store.beginAttempt(uncertainId, 1)
+      yield* store.recordUncertain(
+        uncertainId,
+        1,
+        new DeliveryUncertain({
+          message: "unknown",
+          provider: "mock"
+        })
+      )
+
+      const pending = yield* store.requestCancellation(pendingId)
+      const blocked = yield* Effect.result(store.redrive(uncertainId))
+      const allowed = yield* store.redrive(uncertainId, {
+        acknowledgeDuplicateRisk: true
+      })
+
+      assert.strictEqual(pending, "canceled-before-dispatch")
+      assert.strictEqual(
+        blocked._tag === "Failure" && blocked.failure._tag,
+        "StoreUnavailable"
+      )
+      assert.strictEqual(allowed.status, "pending")
+    }).pipe(Effect.provide(layer)))
   it.effect("paginates unqueued and stale intents", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore

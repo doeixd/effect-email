@@ -1,5 +1,6 @@
 import { DateTime, Duration } from "effect"
 import type {
+  CancellationOutcome,
   CreateDeliveryIntent,
   DeliveryAttempt,
   DeliveryAttemptStatus,
@@ -367,6 +368,26 @@ export const markQueued = (
     ...current,
     queuedAt: now
   }))
+
+export const cancellationOutcome = (
+  intent: DeliveryIntent | undefined
+): CancellationOutcome => {
+  if (intent === undefined) {
+    return "canceled-before-dispatch"
+  }
+  if (
+    intent.status === "accepted" ||
+    intent.status === "delivered" ||
+    intent.status === "bounced" ||
+    intent.status === "complained"
+  ) {
+    return "already-submitted"
+  }
+  if (intent.status === "in-progress" && intent.claimId !== undefined) {
+    return "cancellation-requested"
+  }
+  return "canceled-before-dispatch"
+}
 
 export const requestCancellation = (
   intent: DeliveryIntent,
