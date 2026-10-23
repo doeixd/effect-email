@@ -33,6 +33,16 @@ describe("TransportRegistry", () => {
       )
     }))
 
+  it.effect("returns typed configuration errors", () =>
+    Effect.gen(function* () {
+      const empty = yield* Effect.result(
+        TransportRegistry.makeValidated({})
+      )
+      assert.strictEqual(
+        empty._tag === "Failure" && empty.failure._tag,
+        "ConfigurationError"
+      )
+    }))
   it.effect("sends through the selected registry route", () =>
     Effect.gen(function* () {
       const primary = yield* RecordingTransport.make({

@@ -21,6 +21,8 @@
 - Schema error classes use the static `new` construction pattern so decoding
   behavior is preserved while causes remain sanitized.
 - PostgreSQL example reads `DATABASE_URL` through `Config.Redacted`.
+- Added typed `TransportRegistry.makeValidated` / `layerValidated` and
+  `CloudflareEmail.makeValidated` / `layerValidated` configuration paths.
 - Fallback invokes the failover callback only after target validation.
 ## 0.3.0
 

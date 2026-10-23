@@ -3,6 +3,7 @@ import type { Destination } from "../Ids"
 import { destinationId, makeDestination } from "../Ids"
 import type { TransportError } from "../EmailError"
 import {
+  ConfigurationError,
   DeliveryUncertain,
   UnsupportedCapability
 } from "../EmailError"
@@ -42,25 +43,24 @@ export const capabilities: TransportCapabilities = makeCapabilities({
 
 const resolveConstructor = (
   options: CloudflareEmailOptions
-): CloudflareEmailMessageCtor => {
-  const ctor =
-    options.EmailMessage ??
-    (globalThis as {
-      EmailMessage?: CloudflareEmailMessageCtor
-    }).EmailMessage
-  if (ctor === undefined) {
-    throw new Error(
-      'cloudflare-email requires an EmailMessage constructor from "cloudflare:email"'
-    )
-  }
-  return ctor
-}
+): CloudflareEmailMessageCtor | undefined =>
+  options.EmailMessage ??
+  (globalThis as {
+    EmailMessage?: CloudflareEmailMessageCtor
+  }).EmailMessage
 
-export const make = (
+export const makeValidated = (
   options: CloudflareEmailOptions
-): Effect.Effect<Transport> =>
-  Effect.sync(() => {
+): Effect.Effect<Transport, ConfigurationError> =>
+  Effect.gen(function* () {
     const Ctor = resolveConstructor(options)
+    if (Ctor === undefined) {
+      return yield* new ConfigurationError({
+        message:
+          'cloudflare-email requires an EmailMessage constructor from "cloudflare:email"'
+      })
+    }
+    return yield* Effect.sync(() => {
     const destination: Destination = makeDestination({
       provider: "cloudflare-email",
       account: options.account ?? "default"
@@ -126,9 +126,19 @@ export const make = (
       })
 
     return { destination, capabilities, send }
+    })
   })
+
+export const make = (
+  options: CloudflareEmailOptions
+): Effect.Effect<Transport> => Effect.orDie(makeValidated(options))
 
 export const layer = (
   options: CloudflareEmailOptions
 ): Layer.Layer<EmailTransport> =>
   Layer.effect(EmailTransport, make(options))
+
+export const layerValidated = (
+  options: CloudflareEmailOptions
+): Layer.Layer<EmailTransport, ConfigurationError> =>
+  Layer.effect(EmailTransport, makeValidated(options))

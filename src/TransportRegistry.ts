@@ -2,7 +2,10 @@ import { Context, Effect, Layer } from "effect"
 import type { RouteName } from "./Ids"
 import { routeName } from "./Ids"
 import type { Transport } from "./EmailTransport"
-import { UnsupportedCapability } from "./EmailError"
+import {
+  ConfigurationError,
+  UnsupportedCapability
+} from "./EmailError"
 
 export interface TransportRegistryShape {
   readonly defaultRoute: RouteName | undefined
@@ -30,20 +33,24 @@ const resolveDefault = (
   return names.length === 1 ? routeName(names[0]!) : undefined
 }
 
-export const make = (
+export const makeValidated = (
   routes: Readonly<Record<string, Transport>>,
   options: { readonly defaultRoute?: RouteName } = {}
-): Effect.Effect<TransportRegistryShape, never> =>
-  Effect.sync(() => {
+): Effect.Effect<TransportRegistryShape, ConfigurationError> =>
+  Effect.gen(function* () {
     const entries = Object.entries(routes)
     if (entries.length === 0) {
-      throw new Error("TransportRegistry requires at least one route")
+      return yield* new ConfigurationError({
+        message: "TransportRegistry requires at least one route"
+      })
     }
     const byName = new Map(entries)
     const names = entries.map(([name]) => name)
     const defaultRoute = resolveDefault(names, options.defaultRoute)
     if (options.defaultRoute !== undefined && defaultRoute === undefined) {
-      throw new Error(`default route not found: ${options.defaultRoute}`)
+      return yield* new ConfigurationError({
+        message: `default route not found: ${options.defaultRoute}`
+      })
     }
     return {
       defaultRoute,
@@ -62,11 +69,23 @@ export const make = (
     }
   })
 
+export const make = (
+  routes: Readonly<Record<string, Transport>>,
+  options: { readonly defaultRoute?: RouteName } = {}
+): Effect.Effect<TransportRegistryShape> =>
+  Effect.orDie(makeValidated(routes, options))
+
 export const layer = (
   routes: Readonly<Record<string, Transport>>,
   options: { readonly defaultRoute?: RouteName } = {}
 ): Layer.Layer<TransportRegistry> =>
   Layer.effect(TransportRegistry, make(routes, options))
+
+export const layerValidated = (
+  routes: Readonly<Record<string, Transport>>,
+  options: { readonly defaultRoute?: RouteName } = {}
+): Layer.Layer<TransportRegistry, ConfigurationError> =>
+  Layer.effect(TransportRegistry, makeValidated(routes, options))
 
 export const get = (
   route: RouteName

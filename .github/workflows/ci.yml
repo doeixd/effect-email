@@ -30,4 +30,5 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      - run: bun run effect:diagnostics
       - run: bun run test

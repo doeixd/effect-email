@@ -12,6 +12,21 @@ const layerFor = (transport: Transport) =>
     routes: { default: transport }
   })
 
+describe("Cloudflare Email binding validation", () => {
+  it.effect("returns a typed configuration error without a constructor", () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.result(
+        CloudflareEmail.makeValidated({
+          binding: { send: () => undefined }
+        })
+      )
+
+      assert.strictEqual(
+        result._tag === "Failure" && result.failure._tag,
+        "ConfigurationError"
+      )
+    }))
+})
 describe("Cloudflare Email bindings", () => {
   it.effect("sends raw MIME through the legacy binding", () =>
     Effect.gen(function* () {
