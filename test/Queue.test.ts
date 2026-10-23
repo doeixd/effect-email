@@ -3,7 +3,13 @@ import { Effect, Fiber, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import * as DeliveryStore from "../src/DeliveryStore"
 import * as Email from "../src/Email"
-import { StoreUnavailable, TransportUnavailable } from "../src/EmailError"
+import {
+  InvalidMessage,
+  StoreUnavailable,
+  TransportUnavailable,
+  UnsupportedCapability
+} from "../src/EmailError"
+import type { TransportError } from "../src/EmailError"
 import { deliveryId, tenantId } from "../src/Ids"
 import * as Submissions from "../src/queue/Submissions"
 import * as Mock from "../src/providers/Mock"
@@ -310,6 +316,127 @@ describe("Submission queue", () => {
       )
       assert.strictEqual(failed.length, 1)
       assert.strictEqual((yield* client.inbox.messages).length, 0)
+    }))
+
+  it.effect("fails invalid messages without consuming more attempts", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const transport = {
+        ...client.transport,
+        send: () =>
+          Effect.fail(
+            new InvalidMessage({
+              message: "invalid message"
+            }) as unknown as TransportError
+          )
+      }
+      const target = deliveryId("dlv_queue_invalid")
+      const layers = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: transport }
+        })
+      )
+
+      const { stored, failed, result } = yield* Effect.gen(function* () {
+        const queue = yield* Submissions.make({ maxAttempts: 3 })
+        const store = yield* DeliveryStore.DeliveryStore
+        yield* store.createIntent({
+          ...intentInput,
+          deliveryId: target
+        })
+        yield* Submissions.offer(queue, {
+          version: 1,
+          tenantId: tenant,
+          deliveryId: target,
+          dispatchGeneration: 1
+        })
+        const result = yield* Effect.result(
+          queue.take((submission, metadata) =>
+            Submissions.processSubmission(submission, metadata, {
+              maxAttempts: 3
+            })
+          )
+        )
+        return {
+          stored: yield* store.get(target),
+          failed: yield* store.listFailed,
+          result
+        }
+      }).pipe(Effect.provide(layers))
+
+      assert.strictEqual(result._tag, "Success")
+      assert.isTrue(Option.isSome(stored))
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "failed"
+      )
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.attempts,
+        1
+      )
+      assert.strictEqual(failed.length, 1)
+      assert.strictEqual((yield* client.inbox.messages).length, 0)
+    }))
+
+  it.effect("fails unsupported capabilities without consuming more attempts", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const transport = {
+        ...client.transport,
+        send: () =>
+          Effect.fail(
+            new UnsupportedCapability({
+              message: "attachments unsupported",
+              capability: "attachments"
+            }) as unknown as TransportError
+          )
+      }
+      const target = deliveryId("dlv_queue_unsupported")
+      const layers = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: transport }
+        })
+      )
+
+      const { stored, result } = yield* Effect.gen(function* () {
+        const queue = yield* Submissions.make({ maxAttempts: 3 })
+        const store = yield* DeliveryStore.DeliveryStore
+        yield* store.createIntent({
+          ...intentInput,
+          deliveryId: target
+        })
+        yield* Submissions.offer(queue, {
+          version: 1,
+          tenantId: tenant,
+          deliveryId: target,
+          dispatchGeneration: 1
+        })
+        const result = yield* Effect.result(
+          queue.take((submission, metadata) =>
+            Submissions.processSubmission(submission, metadata, {
+              maxAttempts: 3
+            })
+          )
+        )
+        return { stored: yield* store.get(target), result }
+      }).pipe(Effect.provide(layers))
+
+      assert.strictEqual(result._tag, "Success")
+      assert.isTrue(Option.isSome(stored))
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "failed"
+      )
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.attempts,
+        1
+      )
     }))
 
   it.effect("submits an intent and marks it queued", () =>

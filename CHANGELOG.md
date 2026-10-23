@@ -8,8 +8,12 @@
   to per-message sends.
 - `DeliveryStoreSql` uses transaction-local delivery state so concurrent
   operations on different deliveries cannot overwrite each other.
-- Added regressions for ambiguous HTTP failures, native batch retries, and
-  concurrent PostgreSQL delivery transactions.
+- Policy wrappers and the durable worker share retry decisions. Permanent local
+  failures stop without consuming repeated queue attempts, while retryable
+  rejections and rate limits honor their budgets and delays.
+- Added regressions for ambiguous HTTP failures, native batch retries, shared
+  retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
+  transactions.
 
 ## 0.2.1
 

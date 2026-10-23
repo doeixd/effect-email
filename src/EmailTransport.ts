@@ -5,6 +5,7 @@ import { destinationId, makeDestination } from "./Ids"
 import type { MailboxInput } from "./Message"
 import { normalizeMailbox } from "./Message"
 import type { EmailError, TransportError } from "./EmailError"
+import { decideRetry } from "./RetryDecision"
 import {
   certaintyOf,
   isRetryable,
@@ -91,7 +92,6 @@ export const withRetry =
   (policy: RetryPolicy = {}) =>
   (transport: Transport): Transport => {
     const maxAttempts = Math.max(1, policy.maxAttempts ?? 3)
-    const retryable = policy.retryable ?? isRetryable
     const base = policy.baseDelayMillis ?? 250
     const max = policy.maxDelayMillis ?? 30_000
 
@@ -122,7 +122,14 @@ export const withRetry =
       effect.pipe(
         Effect.retry({
           while: (error) =>
-            certaintyOf(error) !== "unknown" && retryable(error),
+            decideRetry(error, {
+              ...(policy.retryable === undefined
+                ? {}
+                : {
+                    retryable: (failure) =>
+                      policy.retryable?.(failure as TransportError) ?? false
+                  })
+            }).action === "retry",
           schedule
         })
       )

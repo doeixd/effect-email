@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 258 tests across 57 files.
+- `bun run check`: pass, 266 tests across 58 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -52,12 +52,13 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 | Errors | Certainty | Local retry | Worker behavior today |
 | --- | --- | --- | --- |
 | `DeliveryUncertain`, `MalformedProviderResponse` | `unknown` | Never | Records `uncertain`; no automatic resend or fallback |
-| `ProviderRejected`, `AuthenticationFailed`, `IdempotencyConflict` | `rejected` | Only explicitly retryable rejections | Records `rejected` or terminal failure |
-| `InvalidMessage`, `UnsupportedCapability`, `TemplateError` | `not-submitted` | Not useful, but the generic retry predicate does not yet distinguish them | Worker currently retries until its attempt budget |
+| `ProviderRejected`, `AuthenticationFailed`, `IdempotencyConflict` | `rejected` | Only explicitly retryable rejections | Records `rejected`; retryable rejections defer while attempts remain |
+| `InvalidMessage`, `UnsupportedCapability`, `TemplateError` | `not-submitted` | No | Stops immediately and records `failed` |
 | `RateLimited`, `TransportUnavailable` | `not-submitted` | Yes, bounded and `Retry-After` aware | Defers when attempts remain |
-| `StoreUnavailable`, `RecipientSuppressed`, `SubmissionCanceled` | `not-submitted` | No | Defers when attempts remain; this is still too broad for permanent errors |
+| `StoreUnavailable`, `RecipientSuppressed`, `SubmissionCanceled` | `not-submitted` | No | Stops immediately and records `failed`; a failing store may prevent the write |
 
-Sources: `src/EmailError.ts`, `src/EmailTransport.ts`, `src/queue/Submissions.ts`.
+Sources: `src/EmailError.ts`, `src/RetryDecision.ts`, `src/EmailTransport.ts`,
+`src/queue/Submissions.ts`.
 
 Production provider HTTP request failures that occur before a response are
 classified as `DeliveryUncertain` unless an adapter can prove the request was
@@ -99,6 +100,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 - A provider-accepted message with a persistence failure is logged and the queue
   item is acknowledged to avoid an automatic duplicate submission.
 - An uncertain result is never automatically retried or failed over.
+- Policy wrappers and the durable worker use `src/RetryDecision.ts`; permanent
+  local failures stop without consuming further queue attempts.
 - Fallback revalidates the target and preserves original batch indexes.
 - Original batch slots receive one normalized outcome each.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
@@ -109,8 +112,6 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 
 | Gap | Current evidence | Consequence |
 | --- | --- | --- |
-| Permanent local errors consume worker attempts | Worker branches on certainty, not retry eligibility | `InvalidMessage` can retry until the generic budget |
-| No shared retry decision function | Policies and worker encode separate decisions | Direct and durable paths can disagree |
 | No atomic claim or lease | `dispatchGeneration` only | Two workers can begin the same generation; stale work is detected later |
 | SQL `createIntent` is read then upsert | `DeliveryStoreSql.runIntent` and `saveIntent` | Concurrent same-ID insertion can overwrite instead of reporting conflict |
 | Tenant identity is optional in intents | `DeliveryIntent.tenantId` | Identity is not consistently part of durable lookup and correlation |

@@ -19,6 +19,7 @@ import type {
   TemplateContent
 } from "../Message"
 import type { RendererShape } from "../render/Template"
+import { decideRetry } from "../RetryDecision"
 import { Email } from "../Email"
 
 export const SubmissionJob = Schema.Struct({
@@ -320,39 +321,51 @@ export const processSubmission = (
     }
 
     const error = result.failure
-    switch (certaintyOf(error)) {
-      case "unknown":
-        yield* store.recordUncertain(
-          job.deliveryId,
-          job.dispatchGeneration,
-          error
-        )
-        return
-      case "rejected":
-        yield* store.recordRejected(
-          job.deliveryId,
-          job.dispatchGeneration,
-          error
-        )
-        return
-      case "not-submitted":
-        if (metadata.attempts >= (options.maxAttempts ?? 10)) {
-          yield* store.recordFailed(
-            job.deliveryId,
-            job.dispatchGeneration,
-            error
-          )
-          return yield* error
-        }
-        yield* store.recordDeferred(
-          job.deliveryId,
-          job.dispatchGeneration,
-          error,
-          "retryAfterMillis" in error
-            ? error.retryAfterMillis ?? 1_000
-            : 1_000
-        )
+    const certainty = certaintyOf(error)
+    const decision = decideRetry(error, {
+      attemptsMade: metadata.attempts,
+      maxAttempts: options.maxAttempts ?? 10,
+      defaultDelayMillis: 1_000
+    })
+
+    if (decision.action === "reconcile") {
+      yield* store.recordUncertain(
+        job.deliveryId,
+        job.dispatchGeneration,
+        error
+      )
+      return
+    }
+
+    if (decision.action === "retry") {
+      yield* store.recordDeferred(
+        job.deliveryId,
+        job.dispatchGeneration,
+        error,
+        decision.delayMillis ?? 1_000
+      )
+      return yield* error
+    }
+
+    if (certainty === "rejected") {
+      yield* store.recordRejected(
+        job.deliveryId,
+        job.dispatchGeneration,
+        error
+      )
+      if (decision.reason === "exhausted") {
         return yield* error
+      }
+      return
+    }
+
+    yield* store.recordFailed(
+      job.deliveryId,
+      job.dispatchGeneration,
+      error
+    )
+    if (decision.reason === "exhausted") {
+      return yield* error
     }
   })
 
