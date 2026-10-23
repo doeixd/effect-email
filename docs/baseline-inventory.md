@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 292 tests across 59 files.
+- `bun run check`: pass, 293 tests across 59 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -124,6 +124,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 - Event waits can require explicit event types and re-check stored events before
   blocking.
 - The worker re-checks suppression immediately before dispatch.
+- Verified complaint events automatically suppress recipients when a suppression
+  store is assembled; bounce suppression is opt-in via `suppressOnEvents`.
 - Cancellation reports `canceled-before-dispatch`, `cancellation-requested`, or
   `already-submitted`; uncertain redrive requires duplicate-risk acknowledgment.
 - `examples/postgres-service.ts` assembles SQL admission, queue, worker,
@@ -145,7 +147,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Tenant identity is stored but not required for lookup | `DeliveryIntent.tenantId`, `tenant_id` column | A caller can still address a delivery without tenant scoping |
 | Typed event completion is caller-scoped | `workflow/Submissions.ts` | A typed wait must be completed with the same type/purpose scope |
 | Suppression discovery is optional | Admission and worker use `serviceOption` | A production assembly can accidentally omit enforcement |
-| Hard-bounce/complaint auto-suppression is not automatic | Verified events are stored and projected | Operators must apply suppression policy explicitly |
+| Bounce suppression is policy-gated | Complaints suppress automatically; bounces require `suppressOnEvents` | Soft bounces are not suppressed by default |
 | Legacy diagnostics still use unbounded scans | Gateway/catcher `listAll` paths | New tenant-scoped paging exists, but the legacy endpoints are not migrated |
 | Provider-lookup reconciliation is limited | Effect spans and counters exist | No automatic provider retrieval reconciliation |
 | No live provider sandbox suite | Contract tests use local fixtures | Sandbox parity remains release hardening |

@@ -138,6 +138,50 @@ describe("SuppressionStore", () => {
       )
       assert.strictEqual((yield* client.inbox.messages).length, 0)
     }))
+  it.effect("suppresses recipients after a complaint event", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const id = deliveryId("dlv_complaint_suppression")
+      const shared = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Suppression.layerMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: client.transport }
+        })
+      )
+      const app = SubmissionAdmission.layer({
+        defaultFrom: "billing@example.com"
+      }).pipe(Layer.provideMerge(shared))
+
+      const blocked = yield* Effect.gen(function* () {
+        const admission =
+          yield* SubmissionAdmission.SubmissionAdmission
+        const suppression = yield* Suppression.SuppressionStore
+        yield* admission.accept({
+          tenantId: tenant,
+          deliveryId: id,
+          message: {
+            to: "complainer@example.com",
+            subject: "Complaint",
+            text: "Body"
+          }
+        })
+        yield* admission.appendProviderEvent({
+          id: "evt_complaint",
+          deliveryId: id,
+          type: "complained",
+          occurredAt: yield* DateTime.now
+        })
+        return yield* suppression.isSuppressed(
+          tenant,
+          "complainer@example.com"
+        )
+      }).pipe(Effect.provide(app))
+
+      assert.isTrue(Option.isSome(blocked))
+    }))
   it.effect("blocks admission for suppressed recipients", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

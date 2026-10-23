@@ -45,6 +45,7 @@ export interface SubmissionAdmissionOptions {
   readonly queueName?: string
   readonly maxAttempts?: number
   readonly renderer?: RendererShape
+  readonly suppressOnEvents?: ReadonlyArray<"bounced" | "complained">
   readonly authorize?: (
     request: AdmissionRequest
   ) => Effect.Effect<void, EmailError>
@@ -124,6 +125,34 @@ const mailboxAddresses = (
   })
 }
 
+const intentAddresses = (
+  intent: DeliveryIntent
+): ReadonlyArray<string> => {
+  if ("content" in intent.message) {
+    return [
+      ...intent.message.to,
+      ...intent.message.cc,
+      ...intent.message.bcc
+    ].map((address) => address.address)
+  }
+  const parse = (
+    value: MessageInput["to"] | undefined
+  ): ReadonlyArray<string> => {
+    if (value === undefined) {
+      return []
+    }
+    const list = Array.isArray(value) ? value : [value]
+    return list.flatMap((item) => {
+      const parsed = parseMailbox(item)
+      return parsed._tag === "ok" ? [parsed.value.address] : []
+    })
+  }
+  return [
+    ...parse(intent.message.to),
+    ...parse(intent.message.cc),
+    ...parse(intent.message.bcc)
+  ]
+}
 const requestAddresses = (request: AdmissionRequest): ReadonlyArray<string> => {
   const addresses: Array<string> = []
   if ("content" in request.message) {
@@ -331,6 +360,43 @@ export const make = (
         }
       )
 
+    const appendProviderEvent: SubmissionAdmissionShape["appendProviderEvent"] =
+      Effect.fn("SubmissionAdmission.appendProviderEvent")(
+        function* (event) {
+          const inserted = yield* store.appendProviderEvent(event)
+          if (
+            !inserted ||
+            Option.isNone(suppressionStore) ||
+            !(options.suppressOnEvents ?? ["complained"]).includes(
+              event.type as "bounced" | "complained"
+            )
+          ) {
+            return inserted
+          }
+          const stored = yield* (
+            event.deliveryId !== undefined
+              ? store.get(event.deliveryId)
+              : event.providerMessageId !== undefined
+                ? store.findByProviderMessageId(event.providerMessageId)
+                : Effect.succeed(Option.none())
+          )
+          if (Option.isNone(stored) || stored.value.tenantId === undefined) {
+            return inserted
+          }
+          const reason =
+            event.type === "complained"
+              ? "provider complaint"
+              : "provider bounce"
+          for (const recipient of intentAddresses(stored.value)) {
+            yield* suppressionStore.value.suppress({
+              tenantId: stored.value.tenantId,
+              recipient,
+              reason
+            })
+          }
+          return inserted
+        }
+      )
     const get: SubmissionAdmissionShape["get"] = store.get
     const cancel: SubmissionAdmissionShape["cancel"] =
       store.requestCancellation
@@ -347,7 +413,7 @@ export const make = (
       listFailed: store.listFailed,
       listPending: store.listPending,
       listForTenant: store.listForTenant,
-      appendProviderEvent: store.appendProviderEvent,
+      appendProviderEvent,
       listEvents: store.listEvents
     }
   })

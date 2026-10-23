@@ -20,7 +20,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 6 | Complete | Publisher and reconciler use bounded tenant/outbox and stale-claim pages with supporting indexes |
 | 7 | Complete | Shared admission preparation, `Routing.explain`, hard requirements, explicit-route diagnostics, and provider-template/registry boundaries documented |
 | 8 | Complete | Events correlate through receipt message IDs and destination, preserve ingestion time, and project deterministically without regressing terminal state |
-| 9 | Partial | Typed event waits, dispatch-time suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; automatic hard-bounce suppression and wait deadlines remain |
+| 9 | Partial | Typed event waits, dispatch-time suppression, automatic complaint suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; bounce policy and wait deadlines remain |
 | 10 | Partial | PostgreSQL service example, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; typed configuration errors and the optional runtime helper remain |
 | 11 | Partial | Tenant/status paging, redrive audit, retention safety, metrics, and operations docs are implemented; legacy diagnostic scans and provider-lookup reconciliation remain |
 | 12 | Partial | Provider evidence matrix, SMTP slow-client/invalid-command coverage, dependency strategy, release guidance, and tarball smoke added; live sandbox tests remain |
@@ -76,7 +76,7 @@ Still current:
   future work.
 - Suppression service discovery remains optional; production assembly must
   enforce it.
-- Automatic hard-bounce/complaint suppression and typed-wait deadlines remain.
+- Bounce suppression is opt-in; typed-wait deadlines remain.
 - Registry routes are captured at layer construction; live reconfiguration
   remains deferred.
 - Remote attachment URLs are not content-addressed for durable replay.
