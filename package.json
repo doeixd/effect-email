@@ -1,6 +1,6 @@
 {
   "name": "@doeixd/effect-email",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -60,18 +60,18 @@
     "./package.json": "./package.json"
   },
   "overrides": {
-    "@effect/platform-node-shared": "4.0.0-rc.118"
+    "@effect/platform-node-shared": "4.0.6"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.118",
-    "@effect/platform-node-shared": "4.0.0-rc.118",
-    "effect": "4.0.0-rc.118"
+    "@effect/platform-node": "4.0.6",
+    "@effect/platform-node-shared": "4.0.6",
+    "effect": "4.0.6"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.5",
-    "@effect/sql-pg": "4.0.0-rc.118",
-    "@effect/sql-sqlite-node": "4.0.0-rc.118",
-    "@effect/vitest": "4.0.0-rc.118",
+    "@effect/sql-pg": "4.0.6",
+    "@effect/sql-sqlite-node": "4.0.6",
+    "@effect/vitest": "4.0.6",
     "@types/node": "24.19.2",
     "typescript": "5.9.3",
     "vitest": "5.0.5"

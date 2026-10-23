@@ -1,12 +1,15 @@
 # Effect dependency strategy
 
-The package currently pins exact Effect release-candidate versions:
+The package currently pins exact stable Effect versions:
 
 ```json
 {
-  "effect": "4.0.0-rc.118",
-  "@effect/platform-node": "4.0.0-rc.118",
-  "@effect/platform-node-shared": "4.0.0-rc.118"
+  "effect": "4.0.6",
+  "@effect/platform-node": "4.0.6",
+  "@effect/platform-node-shared": "4.0.6",
+  "@effect/sql-pg": "4.0.6",
+  "@effect/sql-sqlite-node": "4.0.6",
+  "@effect/vitest": "4.0.6"
 }
 ```
 
@@ -16,8 +19,8 @@ The `@effect/platform-node-shared` override keeps one shared runtime instance.
 
 - The package exposes Effect services, schemas, layers, and workflow APIs. A
   second Effect instance in the application would break service identity.
-- Release-candidate APIs still change. Exact pins make compatibility failures
-  explicit instead of silently mixing versions.
+- Exact pins make compatibility failures explicit instead of silently mixing
+  versions.
 - The integration tests exercise SQL, HTTP, SMTP, workflow, and queue layers
   against the pinned versions.
 

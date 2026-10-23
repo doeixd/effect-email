@@ -27,6 +27,7 @@ Follow-up snapshot (`37acc46`, 0.3.1):
 
 - `bun run check`: 305 passed across 60 files, including PostgreSQL 17
   integration.
+- Dependencies: `effect@4.0.6` and matching stable `@effect/*` packages.
 - Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
 - Native batch dispatch survives `withRetry`.
 - Policy wrappers and the durable worker share retry decisions; permanent local

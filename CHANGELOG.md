@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Upgraded `effect`, `@effect/platform-node`, `@effect/platform-node-shared`,
+  `@effect/sql-pg`, `@effect/sql-sqlite-node`, and `@effect/vitest` from
+  `4.0.0-rc.118` to stable `4.0.6`.
+- Verified the full suite, PostgreSQL integration, build, dist smoke, tarball
+  smoke, and Effect language-service diagnostics against the stable release.
+
 ## 0.3.1
 
 - SQL pruning now matches memory retention for delivered, bounced, and
