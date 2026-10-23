@@ -8,6 +8,9 @@ metadata:
   modified: 2026-09-16T12:24:54.662Z
 ---
 
+> Historical research snapshot from 2026-09-16. The current project pins
+> stable `effect@4.0.6`.
+
 # Effect v4 — API scope reference (researched 2026-09-16)
 
 **Version status:** npm `latest` is still v3 (3.22.2). v4 ships on `rc` tag: `effect@4.0.0-rc.115` (2026-09-11); `beta` tag stale (beta.107). Install with `npm i effect@rc`.

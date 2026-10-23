@@ -8,6 +8,9 @@ metadata:
   modified: 2026-09-16T12:41:03.799Z
 ---
 
+> Historical research snapshot from 2026-09-16. The current project pins
+> stable `effect@4.0.6`.
+
 # Effect-TS Ecosystem (researched 2026-09-16)
 
 Companion to [[effect-v4-api-scope]] (core module map). Built from: all This Week in Effect (TWIE) issues #101 (2026-01-16) → #135 (2026-09-07, latest), GitHub/npm verification (stars/push dates as of 2026-09-16), and Marve10s/awesome-effect. Appendices hold the raw per-source harvests.

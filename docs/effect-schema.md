@@ -1,5 +1,8 @@
 # Effect Schema (v4) — API & Ecosystem (researched 2026-09-16)
 
+> Historical research snapshot from 2026-09-16. The current project pins
+> stable `effect@4.0.6`.
+
 Companion to [effect-v4-api-scope.md](effect-v4-api-scope.md) and [effect-ecosystem.md](effect-ecosystem.md). Based on `effect@4.0.0-rc.115` source, the official guide `packages/effect/SCHEMA.md` (~7.2k lines, https://github.com/Effect-TS/effect/blob/main/packages/effect/SCHEMA.md) and `migration/schema.md` (v3→v4).
 
 **History:** `@effect/schema` (standalone) → merged into `effect/Schema` in 3.10 → redesigned for v4 ("Schema 2"). v4 is a major API change: fewer variadic args, transformations as first-class objects, and separate decode/encode requirements.

@@ -1,5 +1,8 @@
 # Effect-Adjacent Projects: auth, payments, infra, DB, agents (researched 2026-09-16)
 
+> Historical research snapshot from 2026-09-16. The current project pins
+> stable `effect@4.0.6`.
+
 Companion to [effect-ecosystem.md](effect-ecosystem.md), [effect-schema.md](effect-schema.md) and [unjs-ecosystem.md](unjs-ecosystem.md). Effect v4 = `effect@4.0.0-rc.115`.
 
 ## Summary
