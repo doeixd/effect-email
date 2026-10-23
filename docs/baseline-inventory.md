@@ -1,7 +1,7 @@
 # Delivery baseline inventory
 
 Date: 2026-10-22
-Baseline: `f262911` (PR 9 partial)
+Baseline: `c812f87` (PR 10 partial)
 Roadmap: `docs/service-improvement-plan.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 
