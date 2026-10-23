@@ -52,6 +52,10 @@
 - Cancellation returns `canceled-before-dispatch`, `cancellation-requested`, or
   `already-submitted`; uncertain redrive requires explicit duplicate-risk
   acknowledgment.
+- Added a PostgreSQL durable-service example with admission, worker, publisher,
+  reconciler, status lookup, and scoped shutdown.
+- Added three adoption-level README guidance, a production assembly guide, and
+  a delivery glossary.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

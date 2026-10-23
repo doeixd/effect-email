@@ -75,6 +75,17 @@ More in [`examples/`](./examples), including provider-layer and multi-route regi
 snippets below are fragments inside `Effect.gen`; the files under `examples/`
 are complete runnable programs.
 
+## Adoption levels
+
+| Level | Assembly | Guarantee |
+| --- | --- | --- |
+| Direct | `Email.layerTransport` or static routes + `Email.send` | One prepared submission attempt; no persistence |
+| Resilient | Direct plus `EmailTransport` policies | Bounded local retry/fallback/throttling; uncertain outcomes are never replayed |
+| Durable | `SubmissionAdmission` + SQL store + queue + worker/publisher/reconciler | Durable admission and recovery; external delivery is not exactly once |
+
+See [`docs/production-assembly.md`](./docs/production-assembly.md) and the
+[`examples/postgres-service.ts`](./examples/postgres-service.ts) service shape.
+
 ## Deploy with alchemy.run
 
 The [`examples/alchemy`](./examples/alchemy) example deploys a Cloudflare Worker
@@ -446,6 +457,8 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 - [Review findings](./docs/review-findings.md)
 - [Review plan](./docs/review-plan.md)
 - [Routing diagnostics](./docs/routing.md)
+- [Production assembly](./docs/production-assembly.md)
+- [Delivery glossary](./docs/glossary.md)
 - [Policy composition](./docs/policy-composition.md)
 - [Service and feature improvement plan](./docs/service-improvement-plan.md)
 - [Delivery baseline inventory](./docs/baseline-inventory.md)

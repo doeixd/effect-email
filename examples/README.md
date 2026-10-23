@@ -13,6 +13,14 @@
 - `routes.ts` sends through two Mock transports using `TransportRegistry`:
   `bun examples/routes.ts`.
 
+- `postgres-service.ts` assembles the durable service shape with PostgreSQL,
+  admission, worker, publisher, reconciler, and scoped shutdown. It requires
+  `DATABASE_URL`:
+
+  ```sh
+  DATABASE_URL=postgres://user:pass@localhost:5432/effect_email \
+    bun examples/postgres-service.ts
+  ```
 - `alchemy/` deploys a Cloudflare Worker with alchemy.run and a Cloudflare
   `send_email` binding. See [`alchemy/README.md`](./alchemy/README.md).
 

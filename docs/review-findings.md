@@ -48,6 +48,7 @@ Follow-up snapshot (`f262911`):
 - Typed event waits re-check stored history; dispatch re-checks suppression;
   cancellation returns explicit outcomes and uncertain redrive requires
   duplicate-risk acknowledgment.
+- Added a runnable PostgreSQL service assembly and adoption-level documentation.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.

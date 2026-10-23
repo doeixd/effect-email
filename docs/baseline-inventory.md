@@ -126,6 +126,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 - The worker re-checks suppression immediately before dispatch.
 - Cancellation reports `canceled-before-dispatch`, `cancellation-requested`, or
   `already-submitted`; uncertain redrive requires duplicate-risk acknowledgment.
+- `examples/postgres-service.ts` assembles SQL admission, queue, worker,
+  publisher, reconciler, scoped shutdown, and status lookup.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -143,7 +145,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |
 | Remote attachment snapshots are not content-addressed | URL attachments remain mutable references | Durable replay can observe changed remote content |
-| No production assembly example | `examples/` contains direct, provider, route, and deployment samples | Operators must infer worker, publisher, reconciler, and shutdown wiring |
+| Typed configuration errors are not universal | `Email.layer` still throws for some invalid configuration | Some startup failures are defects rather than typed errors |
 
 These gaps are addressed by the workstreams and PR sequence in
 `docs/service-improvement-plan.md`. They are not release blockers by themselves;
