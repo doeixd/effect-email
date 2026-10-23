@@ -2,7 +2,7 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `3058b68` plus PR 7
+Current baseline: `a5dc60d` (PR 7)
 Status: PR 1-4, 6, and 7 complete; PR 5 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
