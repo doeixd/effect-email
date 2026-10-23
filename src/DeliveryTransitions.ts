@@ -6,7 +6,8 @@ import type {
 } from "./DeliveryStore"
 import { deliveryStatusForEvent } from "./DeliveryStore"
 import { IdempotencyConflict, StoreUnavailable } from "./EmailError"
-import type { DeliveryId } from "./Ids"
+import type { AttemptId, DeliveryId } from "./Ids"
+import { newAttemptId } from "./Ids"
 
 const canonical = (value: unknown): unknown => {
   if (value instanceof Uint8Array) {
@@ -91,91 +92,171 @@ export const existingIntent = (
         idempotencyKey: existing.deliveryId
       })
 
+const claimLost = (deliveryId: DeliveryId): StoreUnavailable =>
+  new StoreUnavailable({
+    message: `delivery claim was lost or superseded: ${deliveryId}`
+  })
+
+const clearClaim = (intent: DeliveryIntent): DeliveryIntent => {
+  const {
+    claimId: _claimId,
+    claimExpiresAt: _claimExpiresAt,
+    ...rest
+  } = intent
+  return rest
+}
+
 const transition = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
   now: DateTime.Utc,
-  change: (intent: DeliveryIntent) => DeliveryIntent
+  change: (intent: DeliveryIntent) => DeliveryIntent,
+  claimId?: AttemptId
 ): DeliveryIntent | StoreUnavailable =>
   intent.dispatchGeneration !== dispatchGeneration
     ? staleGeneration(intent.deliveryId, dispatchGeneration)
-    : change({ ...intent, updatedAt: now })
+    : claimId !== undefined && intent.claimId !== claimId
+      ? claimLost(intent.deliveryId)
+      : change({ ...clearClaim(intent), updatedAt: now })
+
+export interface ClaimOptions {
+  readonly claimId?: AttemptId
+  readonly leaseMillis?: number
+}
 
 export const beginAttempt = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
-  now: DateTime.Utc
-): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    attempts: current.attempts + 1,
-    status: "in-progress"
-  }))
+  now: DateTime.Utc,
+  options: ClaimOptions = {}
+): DeliveryIntent | StoreUnavailable => {
+  if (intent.dispatchGeneration !== dispatchGeneration) {
+    return staleGeneration(intent.deliveryId, dispatchGeneration)
+  }
+  if (intent.claimExpiresAt !== undefined) {
+    const expiresAt = DateTime.toEpochMillis(intent.claimExpiresAt)
+    const current = DateTime.toEpochMillis(now)
+    return new StoreUnavailable({
+      message:
+        expiresAt > current
+          ? `delivery already has an active claim: ${intent.deliveryId}`
+          : `delivery claim expired; reconciliation required: ${intent.deliveryId}`
+    })
+  }
+  const claimId = options.claimId ?? newAttemptId()
+  const leaseMillis = options.leaseMillis ?? 30_000
+  return {
+    ...intent,
+    attempts: intent.attempts + 1,
+    status: "in-progress",
+    claimId,
+    claimExpiresAt: DateTime.addDuration(
+      now,
+      Duration.millis(leaseMillis)
+    ),
+    updatedAt: now
+  }
+}
 
 export const recordAccepted = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
   now: DateTime.Utc,
-  receipt: DeliveryIntent["receipt"]
+  receipt: DeliveryIntent["receipt"],
+  claimId?: AttemptId
 ): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    status: "accepted",
-    receipt
-  }))
+  transition(
+    intent,
+    dispatchGeneration,
+    now,
+    (current) => ({
+      ...current,
+      status: "accepted",
+      receipt
+    }),
+    claimId
+  )
 
 export const recordRejected = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
   now: DateTime.Utc,
-  error: DeliveryIntent["error"]
+  error: DeliveryIntent["error"],
+  claimId?: AttemptId
 ): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    status: "rejected",
-    error
-  }))
+  transition(
+    intent,
+    dispatchGeneration,
+    now,
+    (current) => ({
+      ...current,
+      status: "rejected",
+      error
+    }),
+    claimId
+  )
 
 export const recordUncertain = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
   now: DateTime.Utc,
-  error: DeliveryIntent["error"]
+  error: DeliveryIntent["error"],
+  claimId?: AttemptId
 ): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    status: "uncertain",
-    error
-  }))
+  transition(
+    intent,
+    dispatchGeneration,
+    now,
+    (current) => ({
+      ...current,
+      status: "uncertain",
+      error
+    }),
+    claimId
+  )
 
 export const recordFailed = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
   now: DateTime.Utc,
-  error: DeliveryIntent["error"]
+  error: DeliveryIntent["error"],
+  claimId?: AttemptId
 ): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    status: "failed",
-    error
-  }))
+  transition(
+    intent,
+    dispatchGeneration,
+    now,
+    (current) => ({
+      ...current,
+      status: "failed",
+      error
+    }),
+    claimId
+  )
 
 export const recordDeferred = (
   intent: DeliveryIntent,
   dispatchGeneration: number,
   now: DateTime.Utc,
   error: DeliveryIntent["error"],
-  delayMillis: number
+  delayMillis: number,
+  claimId?: AttemptId
 ): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    status: "pending",
-    error,
-    nextAttemptAt: DateTime.addDuration(
-      now,
-      Duration.millis(delayMillis)
-    )
-  }))
+  transition(
+    intent,
+    dispatchGeneration,
+    now,
+    (current) => ({
+      ...current,
+      status: "pending",
+      error,
+      nextAttemptAt: DateTime.addDuration(
+        now,
+        Duration.millis(delayMillis)
+      )
+    }),
+    claimId
+  )
 
 export const markQueued = (
   intent: DeliveryIntent,
@@ -205,6 +286,8 @@ export const redrive = (
     error: _error,
     nextAttemptAt: _nextAttemptAt,
     queuedAt: _queuedAt,
+    claimId: _claimId,
+    claimExpiresAt: _claimExpiresAt,
     ...base
   } = intent
   return {
@@ -225,7 +308,7 @@ export const applyProviderEvent = (
   return status === undefined
     ? intent
     : {
-        ...intent,
+        ...clearClaim(intent),
         status,
         updatedAt: event.occurredAt
       }

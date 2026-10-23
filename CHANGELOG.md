@@ -23,6 +23,12 @@
   restore/snapshot cycle.
 - Added memory/SQL lifecycle parity coverage for deferred, accepted, delivered,
   redrive, and cancellation transitions.
+- Attempts now acquire exclusive `claimId`/`claimExpiresAt` leases. A second
+  worker cannot claim an in-progress delivery, and stale claims cannot record
+  outcomes.
+- SQL intent creation is atomic under concurrent insertion. Identical content
+  returns the existing intent; different content returns `IdempotencyConflict`.
+- Added concurrent create/claim coverage on SQLite and PostgreSQL.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

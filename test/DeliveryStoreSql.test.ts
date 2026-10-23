@@ -87,6 +87,42 @@ describe("DeliveryStore SQL", () => {
       assert.strictEqual((yield* store.listEvents(target)).length, 0)
     }).pipe(Effect.provide(layer)))
 
+  it.effect("atomically creates intents and claims attempts", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore
+      const id = deliveryId("dlv_sql_atomic")
+      const atomicInput = { ...input, deliveryId: id }
+      const [first, second] = yield* Effect.all(
+        [
+          store.createIntent(atomicInput),
+          store.createIntent(atomicInput)
+        ],
+        { concurrency: "unbounded" }
+      )
+      const conflict = yield* Effect.result(
+        store.createIntent({
+          ...atomicInput,
+          message: { ...atomicInput.message, subject: "Different" }
+        })
+      )
+      const claims = yield* Effect.all(
+        [
+          Effect.result(store.beginAttempt(id, 1)),
+          Effect.result(store.beginAttempt(id, 1))
+        ],
+        { concurrency: "unbounded" }
+      )
+
+      assert.strictEqual(first.deliveryId, second.deliveryId)
+      assert.strictEqual(
+        conflict._tag === "Failure" && conflict.failure._tag,
+        "IdempotencyConflict"
+      )
+      assert.strictEqual(
+        claims.filter((claim) => claim._tag === "Success").length,
+        1
+      )
+    }).pipe(Effect.provide(layer)))
   it.effect("keeps memory and SQL lifecycle transitions in parity", () =>
     Effect.gen(function* () {
       const run = Effect.gen(function* () {

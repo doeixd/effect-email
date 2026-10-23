@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `ca01bf2` (PR 4)
-Status: PR 1-4 complete; later PRs proposed
+Current baseline: `ca01bf2` plus PR 5
+Status: PR 1-4 complete; PR 5 partial
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -16,7 +16,8 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 2 | Complete | Shared retry decisions, permanent-error worker handling, response-loss regression, retry matrix tests |
 | 3 | Complete | Native batch retry preserves indexes and accepted/uncertain slots; opt-in subset retry, fallback capability validation, composite limits, and policy-order docs added |
 | 4 | Complete | Pure lifecycle transitions are shared by memory and SQL; SQL transitions no longer use memory restore/snapshot; parity coverage added |
-| 5-12 | Not started | See the PR sequence |
+| 5 | Partial | Atomic claims with lease metadata and atomic SQL intent creation are implemented; tenant identity migration and attempt history remain |
+| 6-12 | Not started | See the PR sequence |
 
 ## 1. Objective
 
@@ -48,14 +49,13 @@ already addressed:
 | Native batch retry could not resume partial work safely | `withRetry` preserves original indexes, never replays accepted/uncertain slots, and offers opt-in `partialBatchRetry` |
 | Fallback could dispatch to a target that lacked the required capability | Fallback revalidates the secondary; composite batch and recipient limits use the smaller leg |
 | SQL transitions executed through a memory service | Memory and SQL now apply the same pure transitions from `src/DeliveryTransitions.ts` |
+| Attempts had no exclusive claim | `beginAttempt` acquires `claimId`/`claimExpiresAt`; results from stale claims are rejected |
+| SQL intent creation could overwrite a concurrent insert | SQL uses atomic insert-on-conflict and returns the existing intent or `IdempotencyConflict` |
 
 Still current:
 
-- SQL attempt creation has no exclusive claim or lease; it uses a generation
-  guard.
-- SQL `createIntent` is read then upsert and is not atomic under concurrent
-  insertion.
-- Tenant identity is optional in delivery intents.
+- Tenant identity is optional in delivery intents and the schema still uses
+  `delivery_id` as the primary key.
 - Event waits return the first stored event.
 - Suppression service discovery is optional.
 - Background work uses unbounded scans.
@@ -430,8 +430,8 @@ Priority: P1 quality foundation; P2 extended coverage.
 | 11 | Operator queries, metrics, retention | 6, 8 | Bounded queries, redaction, reference-safe pruning |
 | 12 | Provider/SMTP conformance + release qualification | 3, 10, 11 | Published support matrix and tarball smoke tests |
 
-PRs 2-4 are complete. PR 5 remains: atomic claims, atomic creation, and tenant
-identity migration.
+PRs 2-4 are complete. PR 5 is partially complete: atomic claims and creation
+are done; tenant identity migration and per-attempt history remain.
 
 ## 15. Compatibility and migration
 

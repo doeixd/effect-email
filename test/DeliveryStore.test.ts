@@ -2,7 +2,13 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Option } from "effect"
 import * as DeliveryStore from "../src/DeliveryStore"
 import { StoreUnavailable } from "../src/EmailError"
-import { deliveryId } from "../src/Ids"
+import {
+  attemptId,
+  deliveryId,
+  destinationId,
+  makeDestination
+} from "../src/Ids"
+import { makeReceipt } from "../src/Submission"
 
 const target = deliveryId("dlv_store_1")
 
@@ -135,6 +141,72 @@ describe("DeliveryStore", () => {
       )
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
 
+  it.effect("allows only one active claim and rejects stale claim results", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      yield* store.createIntent(input)
+      const claimed = yield* store.beginAttempt(target, 1)
+      const second = yield* Effect.result(
+        store.beginAttempt(target, 1)
+      )
+      const receipt = makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(
+          makeDestination({ provider: "mock", account: "default" })
+        ),
+        deliveryId: target,
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      })
+      const stale = yield* Effect.result(
+        store.recordAccepted(
+          target,
+          1,
+          receipt,
+          attemptId("att_wrong")
+        )
+      )
+      yield* store.recordAccepted(target, 1, receipt, claimed.claimId)
+      const stored = yield* store.get(target)
+
+      assert.isDefined(claimed.claimId)
+      assert.strictEqual(
+        second._tag === "Failure" && second.failure._tag,
+        "StoreUnavailable"
+      )
+      assert.strictEqual(
+        stale._tag === "Failure" && stale.failure._tag,
+        "StoreUnavailable"
+      )
+      assert.isTrue(Option.isSome(stored))
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "accepted"
+      )
+      assert.isUndefined(
+        Option.isSome(stored) ? stored.value.claimId : "missing"
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+
+  it.effect("creates one intent under concurrent identical admission", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const [first, second] = yield* Effect.all(
+        [store.createIntent(input), store.createIntent(input)],
+        { concurrency: "unbounded" }
+      )
+      const conflict = yield* Effect.result(
+        store.createIntent({
+          ...input,
+          message: { ...input.message, subject: "Different" }
+        })
+      )
+
+      assert.strictEqual(first.deliveryId, second.deliveryId)
+      assert.strictEqual(
+        conflict._tag === "Failure" && conflict.failure._tag,
+        "IdempotencyConflict"
+      )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("deduplicates provider events", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore.DeliveryStore

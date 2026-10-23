@@ -158,6 +158,20 @@ export const layerSql = (
           encode(intent)
         )}) ON CONFLICT(delivery_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at, queued_at = excluded.queued_at, data = excluded.data`
 
+      const insertIntent = (intent: DeliveryIntent) =>
+        sql<{ readonly data: string }>`INSERT INTO ${sql(
+          intents
+        )} (delivery_id, status, updated_at, queued_at, data) VALUES (${
+          intent.deliveryId
+        }, ${intent.status}, ${DateTime.formatIso(
+          intent.updatedAt
+        )}, ${
+          intent.queuedAt === undefined
+            ? null
+            : DateTime.formatIso(intent.queuedAt)
+        }, ${JSON.stringify(
+          encode(intent)
+        )}) ON CONFLICT(delivery_id) DO NOTHING RETURNING data`
       const saveCancellation = (deliveryId: string) =>
         Effect.gen(function* () {
           const now = yield* DateTime.now
@@ -259,8 +273,29 @@ export const layerSql = (
                   now: yield* DateTime.now,
                   cancellationRequested: canceled.length > 0
                 })
-                yield* saveIntent(intent)
-                return intent
+                const inserted = yield* insertIntent(intent)
+                if (inserted[0] !== undefined) {
+                  return decode(
+                    JSON.parse(inserted[0].data)
+                  ) as DeliveryIntent
+                }
+                const current = yield* selectIntent(deliveryId)
+                if (current[0] === undefined) {
+                  return yield* new StoreUnavailable({
+                    message: `delivery intent not found after conflict: ${deliveryId}`
+                  })
+                }
+                const currentIntent = decode(
+                  JSON.parse(current[0].data)
+                ) as DeliveryIntent
+                const result = Transitions.existingIntent(
+                  currentIntent,
+                  input
+                )
+                if (result instanceof IdempotencyConflict) {
+                  return yield* result
+                }
+                return result
               })
             )
             .pipe(Effect.mapError(normalizeError))
@@ -277,60 +312,77 @@ export const layerSql = (
             ),
             Effect.mapError(normalizeError)
           ),
-        beginAttempt: (deliveryId, generation) =>
+        beginAttempt: (deliveryId, generation, options) =>
           runTransition(deliveryId, (intent, now) =>
-            Transitions.beginAttempt(intent, generation, now)
+            Transitions.beginAttempt(
+              intent,
+              generation,
+              now,
+              options
+            )
           ),
-        recordAccepted: (deliveryId, generation, receipt) =>
+        recordAccepted: (deliveryId, generation, receipt, claimId) =>
           runTransition(deliveryId, (intent, now) =>
             Transitions.recordAccepted(
               intent,
               generation,
               now,
-              receipt
+              receipt,
+              claimId
             )
           ).pipe(Effect.asVoid),
-        recordRejected: (deliveryId, generation, error) =>
+        recordRejected: (deliveryId, generation, error, claimId) =>
           runTransition(deliveryId, (intent, now) =>
             Transitions.recordRejected(
               intent,
               generation,
               now,
-              error
+              error,
+              claimId
             )
           ).pipe(Effect.asVoid),
-        recordUncertain: (deliveryId, generation, error) =>
+        recordUncertain: (deliveryId, generation, error, claimId) =>
           runTransition(deliveryId, (intent, now) =>
             Transitions.recordUncertain(
               intent,
               generation,
               now,
-              error
+              error,
+              claimId
             )
           ).pipe(Effect.asVoid),
-        recordFailed: (deliveryId, generation, error) =>
+        recordFailed: (deliveryId, generation, error, claimId) =>
           runTransition(deliveryId, (intent, now) =>
             Transitions.recordFailed(
               intent,
               generation,
               now,
-              error
+              error,
+              claimId
             )
           ).pipe(Effect.asVoid),
-        recordDeferred: (deliveryId, generation, error, delay) =>
+        recordDeferred: (
+          deliveryId,
+          generation,
+          error,
+          delay,
+          claimId
+        ) =>
           runTransition(deliveryId, (intent, now) =>
             Transitions.recordDeferred(
               intent,
               generation,
               now,
               error,
-              delay
+              delay,
+              claimId
             )
           ).pipe(Effect.asVoid),
         markQueued: (deliveryId, generation) =>
           runTransition(deliveryId, (intent, now) =>
             Transitions.markQueued(intent, generation, now)
-          ).pipe(Effect.asVoid),        requestCancellation: (deliveryId) =>
+          ).pipe(Effect.asVoid),
+        requestCancellation: (deliveryId) =>
           sql
             .withTransaction(
               Effect.gen(function* () {

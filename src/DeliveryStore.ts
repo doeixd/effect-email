@@ -7,7 +7,12 @@ import {
   Ref,
   Schema
 } from "effect"
-import type { DeliveryId, RouteName, TenantId } from "./Ids"
+import type {
+  AttemptId,
+  DeliveryId,
+  RouteName,
+  TenantId
+} from "./Ids"
 import {
   DeliveryId as DeliveryIdSchema,
   newDeliveryId,
@@ -108,6 +113,8 @@ export interface DeliveryIntent {
   readonly queuedAt?: DateTime.Utc
   readonly receipt?: SubmissionReceipt
   readonly error?: EmailError
+  readonly claimId?: AttemptId
+  readonly claimExpiresAt?: DateTime.Utc
 }
 
 export interface CreateDeliveryIntent {
@@ -130,33 +137,42 @@ export interface DeliveryStoreShape {
   ) => Effect.Effect<Option.Option<DeliveryIntent>, StoreUnavailable>
   readonly beginAttempt: (
     deliveryId: DeliveryId,
-    dispatchGeneration: number
+    dispatchGeneration: number,
+    options?: {
+      readonly claimId?: AttemptId
+      readonly leaseMillis?: number
+    }
   ) => Effect.Effect<DeliveryIntent, StoreUnavailable>
   readonly recordAccepted: (
     deliveryId: DeliveryId,
     dispatchGeneration: number,
-    receipt: SubmissionReceipt
+    receipt: SubmissionReceipt,
+    claimId?: AttemptId
   ) => Effect.Effect<void, StoreUnavailable>
   readonly recordRejected: (
     deliveryId: DeliveryId,
     dispatchGeneration: number,
-    error: EmailError
+    error: EmailError,
+    claimId?: AttemptId
   ) => Effect.Effect<void, StoreUnavailable>
   readonly recordUncertain: (
     deliveryId: DeliveryId,
     dispatchGeneration: number,
-    error: EmailError
+    error: EmailError,
+    claimId?: AttemptId
   ) => Effect.Effect<void, StoreUnavailable>
   readonly recordFailed: (
     deliveryId: DeliveryId,
     dispatchGeneration: number,
-    error: EmailError
+    error: EmailError,
+    claimId?: AttemptId
   ) => Effect.Effect<void, StoreUnavailable>
   readonly recordDeferred: (
     deliveryId: DeliveryId,
     dispatchGeneration: number,
     error: EmailError,
-    delayMillis: number
+    delayMillis: number,
+    claimId?: AttemptId
   ) => Effect.Effect<void, StoreUnavailable>
   readonly markQueued: (
     deliveryId: DeliveryId,
@@ -235,30 +251,40 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
     const createIntent: DeliveryStoreShape["createIntent"] = (input) =>
       Effect.gen(function* () {
         const deliveryId = input.deliveryId ?? newDeliveryId()
-        const existing = (yield* Ref.get(state)).get(deliveryId)
-        if (existing !== undefined) {
-          const result = Transitions.existingIntent(existing, input)
-          if (result instanceof IdempotencyConflict) {
-            return yield* result
-          }
-          return result
-        }
         const now = yield* DateTime.now
-        const intent = Transitions.createIntent(input, {
-          deliveryId,
-          now,
-          cancellationRequested: (
-            yield* Ref.get(cancellations)
-          ).has(deliveryId)
-        })
-        yield* Ref.update(state, (intents) => {
-          const next = new Map(intents)
-          next.set(deliveryId, intent)
-          return next
-        })
-        return intent
+        const cancellationRequested = (
+          yield* Ref.get(cancellations)
+        ).has(deliveryId)
+        const result = yield* Ref.modify(
+          state,
+          (
+            intents
+          ): readonly [
+            DeliveryIntent | IdempotencyConflict,
+            ReadonlyMap<string, DeliveryIntent>
+          ] => {
+            const existing = intents.get(deliveryId)
+            if (existing !== undefined) {
+              return [
+                Transitions.existingIntent(existing, input),
+                intents
+              ]
+            }
+            const intent = Transitions.createIntent(input, {
+              deliveryId,
+              now,
+              cancellationRequested
+            })
+            const next = new Map(intents)
+            next.set(deliveryId, intent)
+            return [intent, next]
+          }
+        )
+        if (result instanceof IdempotencyConflict) {
+          return yield* result
+        }
+        return result
       })
-
     const applyTransition = (
       deliveryId: DeliveryId,
       dispatchGeneration: number,
@@ -304,10 +330,16 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
 
     const beginAttempt: DeliveryStoreShape["beginAttempt"] = (
       deliveryId,
-      dispatchGeneration
+      dispatchGeneration,
+      options
     ) =>
       applyTransition(deliveryId, dispatchGeneration, (intent, now) =>
-        Transitions.beginAttempt(intent, dispatchGeneration, now)
+        Transitions.beginAttempt(
+          intent,
+          dispatchGeneration,
+          now,
+          options
+        )
       )
 
     const markQueued: DeliveryStoreShape["markQueued"] = (
@@ -321,56 +353,64 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
     const recordAccepted: DeliveryStoreShape["recordAccepted"] = (
       deliveryId,
       dispatchGeneration,
-      receipt
+      receipt,
+      claimId
     ) =>
       update(deliveryId, dispatchGeneration, (intent, now) =>
         Transitions.recordAccepted(
           intent,
           dispatchGeneration,
           now,
-          receipt
+          receipt,
+          claimId
         )
       )
 
     const recordRejected: DeliveryStoreShape["recordRejected"] = (
       deliveryId,
       dispatchGeneration,
-      error
+      error,
+      claimId
     ) =>
       update(deliveryId, dispatchGeneration, (intent, now) =>
         Transitions.recordRejected(
           intent,
           dispatchGeneration,
           now,
-          error
+          error,
+          claimId
         )
       )
 
     const recordUncertain: DeliveryStoreShape["recordUncertain"] = (
       deliveryId,
       dispatchGeneration,
-      error
+      error,
+      claimId
     ) =>
       update(deliveryId, dispatchGeneration, (intent, now) =>
         Transitions.recordUncertain(
           intent,
           dispatchGeneration,
           now,
-          error
+          error,
+          claimId
         )
       )
 
     const recordFailed: DeliveryStoreShape["recordFailed"] = (
       deliveryId,
       dispatchGeneration,
-      error
+      error,
+      claimId
     ) =>
       update(deliveryId, dispatchGeneration, (intent, now) =>
         Transitions.recordFailed(
           intent,
           dispatchGeneration,
           now,
-          error
+          error,
+          claimId
         )
       )
 
@@ -378,7 +418,8 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
       deliveryId,
       dispatchGeneration,
       error,
-      delayMillis
+      delayMillis,
+      claimId
     ) =>
       update(deliveryId, dispatchGeneration, (intent, now) =>
         Transitions.recordDeferred(
@@ -386,7 +427,8 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           dispatchGeneration,
           now,
           error,
-          delayMillis
+          delayMillis,
+          claimId
         )
       )
 

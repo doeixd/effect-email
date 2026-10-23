@@ -86,6 +86,64 @@ describe("PostgreSQL integration", () => {
   )
 
   it.effect.skipIf(url === undefined)(
+    "atomically creates and claims across concurrent connections",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        const id = deliveryId("dlv_pg_atomic")
+        const atomicInput = {
+          deliveryId: id,
+          tenantId: tenant,
+          message: {
+            to: "pg-atomic@example.com",
+            subject: "PG atomic",
+            text: "Body"
+          },
+          defaultFrom: "billing@example.com"
+        } as const
+        const [first, second] = yield* Effect.all(
+          [
+            store.createIntent(atomicInput),
+            store.createIntent(atomicInput)
+          ],
+          { concurrency: "unbounded" }
+        )
+        const conflict = yield* Effect.result(
+          store.createIntent({
+            ...atomicInput,
+            message: { ...atomicInput.message, subject: "Different" }
+          })
+        )
+        const claims = yield* Effect.all(
+          [
+            Effect.result(store.beginAttempt(id, 1)),
+            Effect.result(store.beginAttempt(id, 1))
+          ],
+          { concurrency: "unbounded" }
+        )
+
+        assert.strictEqual(first.deliveryId, second.deliveryId)
+        assert.strictEqual(
+          conflict._tag === "Failure" && conflict.failure._tag,
+          "IdempotencyConflict"
+        )
+        assert.strictEqual(
+          claims.filter((claim) => claim._tag === "Success").length,
+          1
+        )
+      }).pipe(
+        Effect.provide(
+          DeliveryStoreSql.layerSql({ tableName: deliveryTable }).pipe(
+            Layer.provideMerge(
+              PgClient.layer({
+                url: Redacted.make(url ?? "")
+              })
+            )
+          )
+        )
+      )
+  )
+  it.effect.skipIf(url === undefined)(
     "isolates concurrent delivery transactions",
     () =>
       Effect.gen(function* () {

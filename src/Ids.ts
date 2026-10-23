@@ -93,6 +93,15 @@ export const newDeliveryId = (): DeliveryId => {
   return deliveryId(`dlv_${Date.now().toString(36)}_${counter}`)
 }
 
+export const newAttemptId = (): AttemptId => {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  if (uuid !== undefined) {
+    return attemptId(`att_${uuid}`)
+  }
+  counter += 1
+  return attemptId(`att_${Date.now().toString(36)}_${counter}`)
+}
+
 export const newGatewaySubmissionId = (): GatewaySubmissionId => {
   const uuid = globalThis.crypto?.randomUUID?.()
   if (uuid !== undefined) {

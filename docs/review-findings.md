@@ -25,7 +25,7 @@ Current snapshot after review fixes:
 
 Follow-up snapshot (`ca01bf2`):
 
-- `bun run check`: 270 passed across 58 files, including PostgreSQL 17
+- `bun run check`: 274 passed across 58 files, including PostgreSQL 17
   integration.
 - Ambiguous HTTP request failures now surface as `DeliveryUncertain`.
 - Native batch dispatch survives `withRetry`.
@@ -35,6 +35,8 @@ Follow-up snapshot (`ca01bf2`):
   slots; fallback revalidates its target and uses safe composite limits.
 - Memory and SQL delivery stores share pure lifecycle transitions, with parity
   coverage for deferred, accepted, event-projected, redrive, and cancellation paths.
+- Attempts acquire exclusive claims with lease metadata. Concurrent intent
+  creation and claim races are covered on SQLite and PostgreSQL.
 - SQL delivery transitions use transaction-local state; concurrent delivery
   isolation is tested.
 - The current inventory and remaining gaps are in `docs/baseline-inventory.md`.
@@ -1287,7 +1289,7 @@ Status: Fixed.
 ## Test audit
 
 - Full suite after final changes: 244 passed, 1 skipped.
-- Follow-up suite: 270 passed, including PostgreSQL 17 integration.
+- Follow-up suite: 274 passed, including PostgreSQL 17 integration.
 - CI workflow added at `.github/workflows/ci.yml` with a PostgreSQL 16 service.
 - Earlier flake run: three consecutive passes at 232/1 skipped.
 - No flaky failures observed.

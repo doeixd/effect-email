@@ -294,7 +294,11 @@ export const processSubmission = (
       }
     }
 
-    yield* store.beginAttempt(job.deliveryId, job.dispatchGeneration)
+    const claimed = yield* store.beginAttempt(
+      job.deliveryId,
+      job.dispatchGeneration
+    )
+    const claimId = claimed.claimId
     const result = yield* Effect.result(
       email.send(intent.message, {
         deliveryId: intent.deliveryId,
@@ -308,7 +312,8 @@ export const processSubmission = (
         store.recordAccepted(
           job.deliveryId,
           job.dispatchGeneration,
-          result.success
+          result.success,
+          claimId
         )
       )
       if (recorded._tag === "Failure") {
@@ -332,7 +337,8 @@ export const processSubmission = (
       yield* store.recordUncertain(
         job.deliveryId,
         job.dispatchGeneration,
-        error
+        error,
+        claimId
       )
       return
     }
@@ -342,7 +348,8 @@ export const processSubmission = (
         job.deliveryId,
         job.dispatchGeneration,
         error,
-        decision.delayMillis ?? 1_000
+        decision.delayMillis ?? 1_000,
+        claimId
       )
       return yield* error
     }
@@ -351,7 +358,8 @@ export const processSubmission = (
       yield* store.recordRejected(
         job.deliveryId,
         job.dispatchGeneration,
-        error
+        error,
+        claimId
       )
       if (decision.reason === "exhausted") {
         return yield* error
@@ -362,7 +370,8 @@ export const processSubmission = (
     yield* store.recordFailed(
       job.deliveryId,
       job.dispatchGeneration,
-      error
+      error,
+      claimId
     )
     if (decision.reason === "exhausted") {
       return yield* error
@@ -385,11 +394,18 @@ export const reconcileStale = (
     const cutoff =
       DateTime.toEpochMillis(now) -
       (options.staleAfterMillis ?? 5 * 60 * 1000)
-    const stale = (yield* store.listAll).filter(
-      (intent) =>
-        intent.status === "in-progress" &&
-        DateTime.toEpochMillis(intent.updatedAt) < cutoff
-    )
+    const stale = (yield* store.listAll).filter((intent) => {
+      if (intent.status !== "in-progress") {
+        return false
+      }
+      if (intent.claimExpiresAt !== undefined) {
+        return (
+          DateTime.toEpochMillis(intent.claimExpiresAt) <=
+          DateTime.toEpochMillis(now)
+        )
+      }
+      return DateTime.toEpochMillis(intent.updatedAt) < cutoff
+    })
     const reconciled: Array<DeliveryId> = []
     for (const intent of stale) {
       const events = yield* store.listEvents(intent.deliveryId)

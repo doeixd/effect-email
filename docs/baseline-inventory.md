@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 270 tests across 58 files.
+- `bun run check`: pass, 274 tests across 58 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -40,7 +40,7 @@ loss. `WorkflowEngine.layerMemory` is a development facility.
 | Registry | `TransportRegistry`, `Email.layerFromRegistry`, `Email.layerFromRegistryLayer` | Routes are resolved while the Email layer is built; there is no hot reconfiguration | `src/TransportRegistry.ts`, `src/Email.ts` |
 | Providers | Provider-specific `make`, layer, client, and transport constructors | 24 provider/infrastructure adapters plus local catchers and `Mock` | `src/providers/` |
 | Admission | `SubmissionAdmission.accept`, `acceptRaw`, `get`, `cancel`, `redrive` | Authorizes, optionally checks suppression, snapshots content, and persists an intent | `src/SubmissionAdmission.ts` |
-| Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, attempt, event, cancellation, and retention state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
+| Delivery store | `DeliveryStore` with memory and SQL layers | Durable intent, claim, attempt, event, cancellation, and retention state; memory and SQL share pure lifecycle transitions | `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/DeliveryTransitions.ts` |
 | Queue and recovery | `src/queue/Submissions.ts` | Persisted submission jobs, publisher, worker, stale reconciliation, redrive | `src/queue/Submissions.ts` |
 | Workflows | `SubmitAfterDelay`, `WaitForDeliveryEvent` | Durable delay and event waiting on `WorkflowEngine` | `src/workflow/Submissions.ts` |
 | Gateway and SMTP | `Gateway`, `Catcher`, `Smtp` client/server | Authenticated submission paths with deny-by-default gateway/catcher authorization | `src/server/`, `src/smtp/` |
@@ -88,8 +88,10 @@ pending -> canceled
 - `delivered`, `bounced`, and `complained` are projected from provider events.
   `opened` and `clicked` are stored but do not change delivery status.
 - `dispatchGeneration` guards stale queue work and stale attempt completions.
-- There is no separate claim ID or lease yet; the generation check is the current
-  concurrency guard.
+- `claimId` and `claimExpiresAt` guard active attempts. A second worker cannot
+  claim an in-progress delivery, and a stale claim cannot record an outcome.
+- An expired claim requires reconciliation or explicit redrive; lease expiry does
+  not authorize an automatic resend.
 
 Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissions.ts`.
 
@@ -108,6 +110,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 - Original batch slots receive one normalized outcome each.
 - Memory and SQL stores apply the same pure lifecycle transitions; SQL no longer
   restores or snapshots through a memory store.
+- Concurrent identical intent creation returns one intent; different content
+  returns `IdempotencyConflict`. SQL creation uses an atomic insert.
 - Cancellation prevents future dispatch when the worker observes it; it cannot
   recall a submitted message.
 - Suppression is enforced when a `SuppressionStore` is present.
@@ -116,8 +120,6 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 
 | Gap | Current evidence | Consequence |
 | --- | --- | --- |
-| No atomic claim or lease | `dispatchGeneration` only | Two workers can begin the same generation; stale work is detected later |
-| SQL `createIntent` is read then upsert | `DeliveryStoreSql.runIntent` and `saveIntent` | Concurrent same-ID insertion can overwrite instead of reporting conflict |
 | Tenant identity is optional in intents | `DeliveryIntent.tenantId` | Identity is not consistently part of durable lookup and correlation |
 | Event wait uses the first stored event | `workflow/Submissions.ts` | An unrelated open/click event can satisfy the wait |
 | Suppression discovery is optional | `SubmissionAdmission` uses `serviceOption` | A production assembly can accidentally omit enforcement |
