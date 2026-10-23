@@ -400,16 +400,81 @@ export const redrive = (
   }
 }
 
+const outcomeRank = (status: DeliveryIntent["status"]): number => {
+  switch (status) {
+    case "delivered":
+      return 1
+    case "bounced":
+      return 2
+    case "complained":
+      return 3
+    default:
+      return 0
+  }
+}
+
+const canProjectEvent = (
+  current: DeliveryIntent["status"],
+  incoming: DeliveryIntent["status"]
+): boolean => {
+  if (
+    current === "rejected" ||
+    current === "failed" ||
+    current === "canceled" ||
+    current === "complained"
+  ) {
+    return false
+  }
+  if (current === incoming) {
+    return false
+  }
+  if (outcomeRank(current) === 0) {
+    return true
+  }
+  return outcomeRank(incoming) > outcomeRank(current)
+}
+
+export const eventMatchesIntent = (
+  event: DeliveryEvent,
+  intent: DeliveryIntent
+): boolean => {
+  const receipt = intent.receipt
+  if (receipt === undefined) {
+    return (
+      event.provider === undefined &&
+      event.destinationId === undefined
+    )
+  }
+  return (
+    (event.provider === undefined ||
+      event.provider === receipt.provider) &&
+    (event.destinationId === undefined ||
+      event.destinationId === receipt.destinationId)
+  )
+}
+
 export const applyProviderEvent = (
   intent: DeliveryIntent,
   event: DeliveryEvent
 ): DeliveryIntent => {
   const status = deliveryStatusForEvent(event.type)
-  return status === undefined
-    ? intent
-    : {
-        ...clearClaim(intent),
-        status,
-        updatedAt: event.occurredAt
-      }
+  if (status === undefined) {
+    return intent
+  }
+  if (
+    intent.lastEventAt !== undefined &&
+    DateTime.toEpochMillis(event.occurredAt) <=
+      DateTime.toEpochMillis(intent.lastEventAt)
+  ) {
+    return intent
+  }
+  if (!canProjectEvent(intent.status, status)) {
+    return intent
+  }
+  return {
+    ...clearClaim(intent),
+    status,
+    lastEventAt: event.occurredAt,
+    updatedAt: event.occurredAt
+  }
 }

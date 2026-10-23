@@ -89,7 +89,7 @@ export const layerSql = (
 
       yield* sql`CREATE TABLE IF NOT EXISTS ${sql(
         intents
-      )} (delivery_id TEXT PRIMARY KEY, tenant_id TEXT, status TEXT NOT NULL, updated_at TEXT NOT NULL, queued_at TEXT, claim_expires_at TEXT, data TEXT NOT NULL)`
+      )} (delivery_id TEXT PRIMARY KEY, tenant_id TEXT, status TEXT NOT NULL, updated_at TEXT NOT NULL, queued_at TEXT, claim_expires_at TEXT, provider_message_id TEXT, data TEXT NOT NULL)`
       yield* sql`CREATE TABLE IF NOT EXISTS ${sql(
         events
       )} (event_id TEXT PRIMARY KEY, delivery_id TEXT, event_type TEXT NOT NULL, occurred_at TEXT NOT NULL, data TEXT NOT NULL)`
@@ -111,6 +111,9 @@ export const layerSql = (
       yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
         `${intents}_claim`
       )} ON ${sql(intents)} (status, claim_expires_at)`
+      yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
+        `${intents}_provider_message`
+      )} ON ${sql(intents)} (provider_message_id)`
       yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
         `${events}_delivery`
       )} ON ${sql(events)} (delivery_id)`
@@ -155,7 +158,7 @@ export const layerSql = (
       const saveIntent = (intent: DeliveryIntent) =>
         sql`INSERT INTO ${sql(
           intents
-        )} (delivery_id, tenant_id, status, updated_at, queued_at, claim_expires_at, data) VALUES (${
+        )} (delivery_id, tenant_id, status, updated_at, queued_at, claim_expires_at, provider_message_id, data) VALUES (${
           intent.deliveryId
         }, ${intent.tenantId ?? null}, ${intent.status}, ${DateTime.formatIso(
           intent.updatedAt
@@ -167,14 +170,14 @@ export const layerSql = (
           intent.claimExpiresAt === undefined
             ? null
             : DateTime.formatIso(intent.claimExpiresAt)
-        }, ${JSON.stringify(
+        }, ${intent.receipt?.providerMessageId ?? null}, ${JSON.stringify(
           encode(intent)
-        )}) ON CONFLICT(delivery_id) DO UPDATE SET tenant_id = excluded.tenant_id, status = excluded.status, updated_at = excluded.updated_at, queued_at = excluded.queued_at, claim_expires_at = excluded.claim_expires_at, data = excluded.data`
+        )}) ON CONFLICT(delivery_id) DO UPDATE SET tenant_id = excluded.tenant_id, status = excluded.status, updated_at = excluded.updated_at, queued_at = excluded.queued_at, claim_expires_at = excluded.claim_expires_at, provider_message_id = excluded.provider_message_id, data = excluded.data`
 
       const insertIntent = (intent: DeliveryIntent) =>
         sql<{ readonly data: string }>`INSERT INTO ${sql(
           intents
-        )} (delivery_id, tenant_id, status, updated_at, queued_at, claim_expires_at, data) VALUES (${
+        )} (delivery_id, tenant_id, status, updated_at, queued_at, claim_expires_at, provider_message_id, data) VALUES (${
           intent.deliveryId
         }, ${intent.tenantId ?? null}, ${intent.status}, ${DateTime.formatIso(
           intent.updatedAt
@@ -186,7 +189,7 @@ export const layerSql = (
           intent.claimExpiresAt === undefined
             ? null
             : DateTime.formatIso(intent.claimExpiresAt)
-        }, ${JSON.stringify(
+        }, ${intent.receipt?.providerMessageId ?? null}, ${JSON.stringify(
           encode(intent)
         )}) ON CONFLICT(delivery_id) DO NOTHING RETURNING data`
       const saveCancellation = (deliveryId: string) =>
@@ -469,6 +472,18 @@ export const layerSql = (
           Effect.mapError(normalizeError)
         ),
         listAll: allIntents.pipe(Effect.mapError(normalizeError)),
+        findByProviderMessageId: (providerMessageId) =>
+          sql<{ readonly data: string }>`SELECT data FROM ${sql(
+            intents
+          )} WHERE provider_message_id = ${providerMessageId} ORDER BY updated_at DESC LIMIT 1`.pipe(
+            Effect.map((rows) =>
+              Option.map(
+                Option.fromNullishOr(rows[0]),
+                (row) => decode(JSON.parse(row.data)) as DeliveryIntent
+              )
+            ),
+            Effect.mapError(normalizeError)
+          ),
         listAttempts: (deliveryId) =>
           sql<{ readonly data: string }>`SELECT data FROM ${sql(
             intents
@@ -530,29 +545,54 @@ export const layerSql = (
                 if (rows.length > 0) {
                   return false
                 }
-                yield* saveEvent(event)
-                if (event.deliveryId !== undefined) {
-                  const intentRows = yield* selectIntent(
-                    event.deliveryId
-                  )
+                let deliveryId = event.deliveryId
+                if (
+                  deliveryId === undefined &&
+                  event.providerMessageId !== undefined
+                ) {
+                  const correlated = yield* sql<{
+                    readonly data: string
+                  }>`SELECT data FROM ${sql(
+                    intents
+                  )} WHERE provider_message_id = ${event.providerMessageId} ORDER BY updated_at DESC LIMIT 1`
+                  if (correlated[0] !== undefined) {
+                    const intent = decode(
+                      JSON.parse(correlated[0].data)
+                    ) as DeliveryIntent
+                    if (Transitions.eventMatchesIntent(event, intent)) {
+                      deliveryId = intent.deliveryId
+                    }
+                  }
+                }
+                const storedEvent: DeliveryEvent = {
+                  ...event,
+                  ingestedAt: event.ingestedAt ?? (yield* DateTime.now),
+                  ...(deliveryId === undefined ? {} : { deliveryId })
+                }
+                yield* saveEvent(storedEvent)
+                if (deliveryId !== undefined) {
+                  const intentRows = yield* selectIntent(deliveryId)
                   if (intentRows[0] !== undefined) {
                     const intent = decode(
                       JSON.parse(intentRows[0].data)
                     ) as DeliveryIntent
-                    const nextIntent = Transitions.applyProviderEvent(
-                      intent,
-                      event
-                    )
-                    if (nextIntent !== intent) {
-                      yield* saveIntent(nextIntent)
+                    if (
+                      Transitions.eventMatchesIntent(storedEvent, intent)
+                    ) {
+                      const nextIntent = Transitions.applyProviderEvent(
+                        intent,
+                        storedEvent
+                      )
+                      if (nextIntent !== intent) {
+                        yield* saveIntent(nextIntent)
+                      }
                     }
                   }
                 }
                 return true
               })
             )
-            .pipe(Effect.mapError(normalizeError)),
-        listEvents: (deliveryId) =>
+            .pipe(Effect.mapError(normalizeError)),        listEvents: (deliveryId) =>
           (deliveryId === undefined
             ? allEvents
             : Effect.map(

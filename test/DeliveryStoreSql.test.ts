@@ -7,6 +7,7 @@ import {
   deliveryId,
   destinationId,
   makeDestination,
+  providerMessageId,
   tenantId
 } from "../src/Ids"
 import { TransportUnavailable } from "../src/EmailError"
@@ -168,6 +169,41 @@ describe("DeliveryStore SQL", () => {
         claims.filter((claim) => claim._tag === "Success").length,
         1
       )
+    }).pipe(Effect.provide(layer)))
+  it.effect("correlates provider events by receipt message id", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore
+      const id = deliveryId("dlv_sql_event_correlation")
+      const destination = makeDestination({
+        provider: "mock",
+        account: "default"
+      })
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordAccepted(id, 1, makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(destination),
+        deliveryId: id,
+        providerMessageId: providerMessageId("sql_provider_message_1"),
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      }))
+      const inserted = yield* store.appendProviderEvent({
+        id: "sql_event_correlated",
+        provider: "mock",
+        destinationId: destinationId(destination),
+        providerMessageId: providerMessageId("sql_provider_message_1"),
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(1_000))
+      })
+      const stored = yield* store.get(id)
+      const events = yield* store.listEvents(id)
+
+      assert.isTrue(inserted)
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "delivered"
+      )
+      assert.strictEqual(events.length, 1)
     }).pipe(Effect.provide(layer)))
   it.effect("keeps memory and SQL lifecycle transitions in parity", () =>
     Effect.gen(function* () {

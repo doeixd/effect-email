@@ -6,7 +6,8 @@ import {
   attemptId,
   deliveryId,
   destinationId,
-  makeDestination
+  makeDestination,
+  providerMessageId
 } from "../src/Ids"
 import { makeReceipt } from "../src/Submission"
 
@@ -209,6 +210,76 @@ describe("DeliveryStore", () => {
         conflict._tag === "Failure" && conflict.failure._tag,
         "IdempotencyConflict"
       )
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+  it.effect("correlates and projects provider events deterministically", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      const id = deliveryId("dlv_store_events")
+      const destination = makeDestination({
+        provider: "mock",
+        account: "default"
+      })
+      const otherDestination = makeDestination({
+        provider: "mock",
+        account: "other"
+      })
+      const messageId = providerMessageId("provider_message_1")
+
+      yield* store.createIntent({ ...input, deliveryId: id })
+      yield* store.beginAttempt(id, 1)
+      yield* store.recordAccepted(id, 1, makeReceipt({
+        provider: "mock",
+        destinationId: destinationId(destination),
+        deliveryId: id,
+        providerMessageId: messageId,
+        acceptedAt: DateTime.makeUnsafe(new Date(0))
+      }))
+
+      const delivered = yield* store.appendProviderEvent({
+        id: "event_delivered",
+        provider: "mock",
+        destinationId: destinationId(destination),
+        providerMessageId: messageId,
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(2_000))
+      })
+      const older = yield* store.appendProviderEvent({
+        id: "event_older_bounce",
+        provider: "mock",
+        destinationId: destinationId(destination),
+        providerMessageId: messageId,
+        type: "bounced",
+        occurredAt: DateTime.makeUnsafe(new Date(1_000))
+      })
+      const newer = yield* store.appendProviderEvent({
+        id: "event_newer_complaint",
+        provider: "mock",
+        destinationId: destinationId(destination),
+        providerMessageId: messageId,
+        type: "complained",
+        occurredAt: DateTime.makeUnsafe(new Date(3_000))
+      })
+      const crossAccount = yield* store.appendProviderEvent({
+        id: "event_cross_account",
+        provider: "mock",
+        destinationId: destinationId(otherDestination),
+        providerMessageId: messageId,
+        type: "delivered",
+        occurredAt: DateTime.makeUnsafe(new Date(4_000))
+      })
+      const stored = yield* store.get(id)
+      const events = yield* store.listEvents(id)
+
+      assert.isTrue(delivered)
+      assert.isTrue(older)
+      assert.isTrue(newer)
+      assert.isTrue(crossAccount)
+      assert.isTrue(Option.isSome(stored))
+      assert.strictEqual(
+        Option.isSome(stored) && stored.value.status,
+        "complained"
+      )
+      assert.strictEqual(events.length, 3)
     }).pipe(Effect.provide(DeliveryStore.layerMemory)))
   it.effect("deduplicates provider events", () =>
     Effect.gen(function* () {

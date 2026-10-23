@@ -40,6 +40,12 @@
   fail before a durable intent is created.
 - Added `Routing.explain` for side-effect-free capability, requirement, and
   explicit-route diagnostics, plus `Routing` package export and docs.
+- Provider events now carry ingestion time, provider/destination identity, and
+  optional recipient/provider event IDs. Correlation uses receipt message IDs
+  and destination, not caller-supplied delivery IDs alone.
+- Event projection is deterministic: older events and contradictory terminal
+  events are stored but cannot regress delivery status.
+- `0007_event_correlation.sql` adds and backfills the provider message ID index.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

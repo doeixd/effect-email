@@ -11,11 +11,13 @@ import type {
   AttemptId,
   DeliveryId,
   DestinationId,
+  ProviderMessageId,
   RouteName,
   TenantId
 } from "./Ids"
 import {
   DeliveryId as DeliveryIdSchema,
+  DestinationId as DestinationIdSchema,
   newDeliveryId,
   ProviderMessageId as ProviderMessageIdSchema
 } from "./Ids"
@@ -67,9 +69,14 @@ export const deliveryStatusForEvent = (
 export const DeliveryEvent = Schema.Struct({
   id: Schema.NonEmptyString,
   deliveryId: Schema.optionalKey(DeliveryIdSchema),
+  provider: Schema.optionalKey(Schema.NonEmptyString),
+  destinationId: Schema.optionalKey(DestinationIdSchema),
   providerMessageId: Schema.optionalKey(ProviderMessageIdSchema),
+  providerEventId: Schema.optionalKey(Schema.NonEmptyString),
+  recipient: Schema.optionalKey(Schema.String),
   type: DeliveryEventType,
   occurredAt: Schema.DateTimeUtc,
+  ingestedAt: Schema.optionalKey(Schema.DateTimeUtc),
   payload: Schema.optionalKey(Schema.Json)
 })
 export type DeliveryEvent = typeof DeliveryEvent.Type
@@ -136,6 +143,7 @@ export interface DeliveryIntent {
   readonly error?: EmailError
   readonly claimId?: AttemptId
   readonly claimExpiresAt?: DateTime.Utc
+  readonly lastEventAt?: DateTime.Utc
   readonly attemptHistory?: ReadonlyArray<DeliveryAttempt>
 }
 
@@ -232,6 +240,9 @@ export interface DeliveryStoreShape {
   readonly listAttempts: (
     deliveryId: DeliveryId
   ) => Effect.Effect<ReadonlyArray<DeliveryAttempt>, StoreUnavailable>
+  readonly findByProviderMessageId: (
+    providerMessageId: ProviderMessageId
+  ) => Effect.Effect<Option.Option<DeliveryIntent>, StoreUnavailable>
   readonly listUnqueuedForTenant: (options: {
     readonly tenantId: TenantId
     readonly limit: number
@@ -542,33 +553,61 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
         )
       )
 
+    const findByProviderMessageId: DeliveryStoreShape["findByProviderMessageId"] =
+      (providerMessageId) =>
+        Effect.map(Ref.get(state), (intents) =>
+          Option.fromNullishOr(
+            [...intents.values()].find(
+              (intent) =>
+                intent.receipt?.providerMessageId === providerMessageId
+            )
+          )
+        )
+
     const appendProviderEvent: DeliveryStoreShape["appendProviderEvent"] = (
       event
     ) =>
       Effect.gen(function* () {
+        const correlated =
+          event.deliveryId === undefined &&
+          event.providerMessageId !== undefined
+            ? yield* findByProviderMessageId(event.providerMessageId)
+            : Option.none()
+        const storedEvent: DeliveryEvent = {
+          ...event,
+          ingestedAt: event.ingestedAt ?? (yield* DateTime.now),
+          ...(event.deliveryId === undefined &&
+          Option.isSome(correlated) &&
+          Transitions.eventMatchesIntent(event, correlated.value)
+            ? { deliveryId: correlated.value.deliveryId }
+            : {})
+        }
         const inserted = yield* Ref.modify(events, (current) => {
-          if (current.has(event.id)) {
+          if (current.has(storedEvent.id)) {
             return [false, current]
           }
           const next = new Map(current)
-          next.set(event.id, event)
+          next.set(storedEvent.id, storedEvent)
           return [true, next]
         })
-        if (inserted && event.deliveryId !== undefined) {
+        if (inserted && storedEvent.deliveryId !== undefined) {
           yield* Ref.update(state, (intents) => {
-            const intent = intents.get(event.deliveryId!)
-            if (intent === undefined) {
+            const intent = intents.get(storedEvent.deliveryId!)
+            if (
+              intent === undefined ||
+              !Transitions.eventMatchesIntent(storedEvent, intent)
+            ) {
               return intents
             }
             const nextIntent = Transitions.applyProviderEvent(
               intent,
-              event
+              storedEvent
             )
             if (nextIntent === intent) {
               return intents
             }
             const next = new Map(intents)
-            next.set(event.deliveryId!, nextIntent)
+            next.set(storedEvent.deliveryId!, nextIntent)
             return next
           })
         }
@@ -668,6 +707,7 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           (intents) =>
             intents.get(deliveryId)?.attemptHistory ?? []
         ),
+      findByProviderMessageId,
       listUnqueuedForTenant: (options) =>
         Effect.map(Ref.get(state), (intents) =>
           [...intents.values()]
