@@ -29,6 +29,7 @@ import {
   MalformedProviderResponse,
   ProviderRejected,
   RateLimited,
+  DeliveryUncertain,
   TransportUnavailable,
   UnsupportedCapability
 } from "../EmailError"
@@ -358,10 +359,9 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "SendGrid request failed before a response was received",
+          new DeliveryUncertain({
+            message: "SendGrid request failed before a response was received; outcome is unknown",
             provider: "sendgrid",
-            retryable: true,
             cause
           })
       )

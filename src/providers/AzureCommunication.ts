@@ -20,6 +20,7 @@ import {
   MalformedProviderResponse,
   ProviderRejected,
   RateLimited,
+  DeliveryUncertain,
   TransportUnavailable,
   UnsupportedCapability
 } from "../EmailError"
@@ -449,11 +450,10 @@ export const make = (
         const response = yield* client.execute(request).pipe(
           Effect.mapError(
             (cause) =>
-              new TransportUnavailable({
+              new DeliveryUncertain({
                 message:
                   "Azure Communication request failed before a response",
                 provider: "azure-communication",
-                retryable: true,
                 cause
               })
           )
@@ -537,11 +537,10 @@ export const make = (
         const response = yield* client.execute(request).pipe(
           Effect.mapError(
             (cause) =>
-              new TransportUnavailable({
+              new DeliveryUncertain({
                 message:
                   "Azure Communication status request failed",
                 provider: "azure-communication",
-                retryable: true,
                 cause
               })
           )

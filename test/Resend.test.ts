@@ -3,6 +3,7 @@ import { Effect, Layer, Redacted } from "effect"
 import {
   Headers,
   HttpClient,
+  HttpClientError,
   HttpClientRequest,
   HttpClientResponse
 } from "effect/http"
@@ -248,6 +249,24 @@ describe("Resend", () => {
 
       assert.strictEqual(error._tag, "MalformedProviderResponse")
       assert.strictEqual(certaintyOf(error), "unknown")
+    }))
+
+  it.effect("marks pre-response HTTP failures as uncertain", () =>
+    Effect.gen(function* () {
+      const error = yield* sendError((request) =>
+        Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              cause: new Error("socket closed")
+            })
+          })
+        )
+      )
+
+      assert.strictEqual(error._tag, "DeliveryUncertain")
+      assert.strictEqual(certaintyOf(error), "unknown")
+      assert.isFalse(isRetryable(error))
     }))
 
   it.effect("forwards an idempotency key", () =>

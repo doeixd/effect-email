@@ -11,6 +11,7 @@ import type { SqlError } from "effect/sql/SqlError"
 import type {
   DeliveryEvent,
   DeliveryIntent,
+  DeliveryStoreShape,
   DeliveryStoreSnapshot
 } from "./DeliveryStore"
 import type { DeliveryId } from "./Ids"
@@ -116,7 +117,7 @@ export const layerSql = (
         `${events}_occurred`
       )} ON ${sql(events)} (occurred_at)`
 
-      const memory = yield* Effect.scoped(
+      const memoryStore = Effect.scoped(
         Effect.map(
           Layer.build(layerMemory),
           (context) => Context.get(context, DeliveryStore)
@@ -215,13 +216,14 @@ export const layerSql = (
       const runIntent = <A, E>(
         deliveryId: string,
         persist: boolean,
-        run: () => Effect.Effect<A, E>,
+        run: (store: DeliveryStoreShape) => Effect.Effect<A, E>,
         clearCancellation = false
       ): Effect.Effect<A, E | StoreUnavailable> =>
         sql
           .withTransaction(
             Effect.gen(function* () {
               const rows = yield* selectIntent(deliveryId)
+              const memory = yield* memoryStore
               const existing =
                 rows[0] === undefined
                   ? undefined
@@ -239,7 +241,7 @@ export const layerSql = (
                     ? []
                     : [deliveryId as DeliveryId]
               })
-              const result = yield* Effect.result(run())
+              const result = yield* Effect.result(run(memory))
               if (result._tag === "Success" && persist) {
                 const snapshot = yield* memory.snapshot
                 const next = snapshot.intents[0]
@@ -266,7 +268,7 @@ export const layerSql = (
 
       return {
         createIntent: (input) =>
-          runIntent(input.deliveryId ?? "", true, () =>
+          runIntent(input.deliveryId ?? "", true, (memory) =>
             memory.createIntent(input)
           ),
         get: (deliveryId) =>
@@ -282,27 +284,27 @@ export const layerSql = (
             Effect.mapError(normalizeError)
           ),
         beginAttempt: (deliveryId, generation) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.beginAttempt(deliveryId, generation)
           ),
         recordAccepted: (deliveryId, generation, receipt) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.recordAccepted(deliveryId, generation, receipt)
           ),
         recordRejected: (deliveryId, generation, error) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.recordRejected(deliveryId, generation, error)
           ),
         recordUncertain: (deliveryId, generation, error) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.recordUncertain(deliveryId, generation, error)
           ),
         recordFailed: (deliveryId, generation, error) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.recordFailed(deliveryId, generation, error)
           ),
         recordDeferred: (deliveryId, generation, error, delay) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.recordDeferred(
               deliveryId,
               generation,
@@ -311,13 +313,14 @@ export const layerSql = (
             )
           ),
         markQueued: (deliveryId, generation) =>
-          runIntent(deliveryId, true, () =>
+          runIntent(deliveryId, true, (memory) =>
             memory.markQueued(deliveryId, generation)
           ),
         requestCancellation: (deliveryId) =>
           sql
             .withTransaction(
               Effect.gen(function* () {
+                const memory = yield* memoryStore
                 const rows = yield* selectIntent(deliveryId)
                 const existing =
                   rows[0] === undefined
@@ -370,7 +373,7 @@ export const layerSql = (
           runIntent(
             deliveryId,
             true,
-            () => memory.redrive(deliveryId),
+            (memory) => memory.redrive(deliveryId),
             true
           ),
         listUncertain: intentsByStatus("uncertain").pipe(

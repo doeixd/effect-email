@@ -341,11 +341,10 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
+          new DeliveryUncertain({
             message:
-              "Cloudflare Email Service request failed before a response was received",
+              "Cloudflare Email Service request failed before a response was received; outcome is unknown",
             provider: "cloudflare-email-rest",
-            retryable: true,
             cause
           })
       )

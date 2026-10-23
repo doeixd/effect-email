@@ -443,11 +443,10 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
+          new DeliveryUncertain({
             message:
-              "MailChannels request failed before a response was received",
+              "MailChannels request failed before a response was received; outcome is unknown",
             provider: "mailchannels",
-            retryable: true,
             cause
           })
       )

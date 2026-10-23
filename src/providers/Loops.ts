@@ -24,6 +24,7 @@ import {
   MalformedProviderResponse,
   ProviderRejected,
   RateLimited,
+  DeliveryUncertain,
   TransportUnavailable,
   UnsupportedCapability
 } from "../EmailError"
@@ -328,10 +329,9 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "Loops request failed before a response was received",
+          new DeliveryUncertain({
+            message: "Loops request failed before a response was received; outcome is unknown",
             provider: "loops",
-            retryable: true,
             cause
           })
       )

@@ -24,6 +24,7 @@ import {
   MalformedProviderResponse,
   ProviderRejected,
   RateLimited,
+  DeliveryUncertain,
   TransportUnavailable,
   UnsupportedCapability
 } from "../EmailError"
@@ -321,10 +322,9 @@ const execute = (
   client.execute(request).pipe(
     Effect.mapError(
       (cause) =>
-        new TransportUnavailable({
-          message: "Scaleway request failed before a response was received",
+        new DeliveryUncertain({
+          message: "Scaleway request failed before a response was received; outcome is unknown",
           provider: "scaleway",
-          retryable: true,
           cause
         })
     )

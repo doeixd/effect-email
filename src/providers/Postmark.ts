@@ -381,10 +381,9 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "Postmark request failed before a response was received",
+          new DeliveryUncertain({
+            message: "Postmark request failed before a response was received; outcome is unknown",
             provider: "postmark",
-            retryable: true,
             cause
           })
       )
@@ -448,10 +447,9 @@ const makeSendEmailBatch = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "Postmark batch request failed before a response was received",
+          new DeliveryUncertain({
+            message: "Postmark batch request failed before a response was received; outcome is unknown",
             provider: "postmark",
-            retryable: true,
             cause
           })
       )

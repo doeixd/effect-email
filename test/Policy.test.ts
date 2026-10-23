@@ -130,7 +130,80 @@ describe("EmailTransport.withRetry", () => {
     }))
 })
 
+describe("EmailTransport.withRetry native batch", () => {
+  it.live("preserves native batch dispatch and retries the batch", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const base = client.transport as EmailTransport.NativeBatchTransport
+      let calls = 0
+      const transport: EmailTransport.NativeBatchTransport = {
+        ...base,
+        sendBatch: (envelopes) =>
+          Effect.suspend(() => {
+            calls += 1
+            if (calls === 1) {
+              return Effect.fail(unavailable())
+            }
+            return base.sendBatch(envelopes)
+          })
+      }
+      const retried = EmailTransport.withRetry({
+        maxAttempts: 2,
+        baseDelayMillis: 1
+      })(transport)
+      const layer = Email.layer({
+        defaultFrom: "billing@example.com",
+        routes: { default: retried }
+      })
 
+      const outcomes = yield* Email.sendBatch([
+        { to: "one@example.com", subject: "One", text: "One" },
+        { to: "two@example.com", subject: "Two", text: "Two" }
+      ]).pipe(Effect.provide(layer))
+
+      assert.strictEqual(calls, 2)
+      assert.deepStrictEqual(
+        outcomes.map((outcome) => outcome._tag),
+        ["accepted", "accepted"]
+      )
+      assert.strictEqual((yield* client.inbox.messages).length, 2)
+    }))
+
+  it.live("does not retry an uncertain native batch", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const base = client.transport as EmailTransport.NativeBatchTransport
+      let calls = 0
+      const transport: EmailTransport.NativeBatchTransport = {
+        ...base,
+        sendBatch: () =>
+          Effect.suspend(() => {
+            calls += 1
+            return Effect.fail(
+              new DeliveryUncertain({
+                message: "outcome unknown",
+                provider: "recording"
+              })
+            )
+          })
+      }
+      const retried = EmailTransport.withRetry({
+        maxAttempts: 3,
+        baseDelayMillis: 1
+      })(transport)
+      const layer = Email.layer({
+        defaultFrom: "billing@example.com",
+        routes: { default: retried }
+      })
+
+      const outcomes = yield* Email.sendBatch([
+        { to: "one@example.com", subject: "One", text: "One" }
+      ]).pipe(Effect.provide(layer))
+
+      assert.strictEqual(calls, 1)
+      assert.strictEqual(outcomes[0]?._tag, "uncertain")
+    }))
+})
 
 describe("EmailTransport.withFallback", () => {
   it.effect("sends through the secondary after a safe primary failure", () =>

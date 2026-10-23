@@ -403,10 +403,9 @@ const makeSendMessages = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "Mailjet request failed before a response was received",
+          new DeliveryUncertain({
+            message: "Mailjet request failed before a response was received; outcome is unknown",
             provider: "mailjet",
-            retryable: true,
             cause
           })
       )

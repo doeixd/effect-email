@@ -25,6 +25,7 @@ import {
   MalformedProviderResponse,
   ProviderRejected,
   RateLimited,
+  DeliveryUncertain,
   TransportUnavailable,
   UnsupportedCapability
 } from "../EmailError"
@@ -452,10 +453,9 @@ const makeSend = (
     return client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "ZeptoMail request failed before a response was received",
+          new DeliveryUncertain({
+            message: "ZeptoMail request failed before a response was received; outcome is unknown",
             provider: "zeptomail",
-            retryable: true,
             cause
           })
       )

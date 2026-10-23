@@ -371,10 +371,9 @@ export const make = (
         const response = yield* client.execute(request).pipe(
           Effect.mapError(
             (cause) =>
-              new TransportUnavailable({
+              new DeliveryUncertain({
                 message: "SES request failed before a response",
                 provider: "ses",
-                retryable: true,
                 cause
               })
           )

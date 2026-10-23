@@ -116,8 +116,10 @@ export const withRetry =
       })
     )
 
-    const send: Transport["send"] = (envelope) =>
-      transport.send(envelope).pipe(
+    const retrying = <A>(
+      effect: Effect.Effect<A, TransportError>
+    ): Effect.Effect<A, TransportError> =>
+      effect.pipe(
         Effect.retry({
           while: (error) =>
             certaintyOf(error) !== "unknown" && retryable(error),
@@ -125,7 +127,10 @@ export const withRetry =
         })
       )
 
-    return {
+    const send: Transport["send"] = (envelope) =>
+      retrying(transport.send(envelope))
+
+    const decorated: Transport = {
       destination: transport.destination,
       capabilities: transport.capabilities,
       send,
@@ -134,6 +139,14 @@ export const withRetry =
         : { retrieve: transport.retrieve }),
       ...(transport.cancel === undefined ? {} : { cancel: transport.cancel })
     }
+    if (!isNativeBatchTransport(transport)) {
+      return decorated
+    }
+    return {
+      ...decorated,
+      sendBatch: (envelopes) =>
+        retrying(transport.sendBatch(envelopes))
+    } as NativeBatchTransport
   }
 
 export interface FallbackOptions {

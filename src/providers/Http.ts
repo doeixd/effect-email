@@ -455,10 +455,9 @@ const makeSendEmail = (
     const response = yield* client.execute(request).pipe(
       Effect.mapError(
         (cause) =>
-          new TransportUnavailable({
-            message: "HTTP endpoint request failed before a response was received",
+          new DeliveryUncertain({
+            message: "HTTP endpoint request failed before a response was received; outcome is unknown",
             provider,
-            retryable: true,
             cause
           })
       )

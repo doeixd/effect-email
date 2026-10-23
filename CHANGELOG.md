@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- HTTP provider request failures before a response now surface as
+  `DeliveryUncertain` and are not retried automatically.
+- `withRetry` preserves native batch dispatch instead of silently falling back
+  to per-message sends.
+- `DeliveryStoreSql` uses transaction-local delivery state so concurrent
+  operations on different deliveries cannot overwrite each other.
+- Added regressions for ambiguous HTTP failures, native batch retries, and
+  concurrent PostgreSQL delivery transactions.
+
 ## 0.2.1
 
 - SMTP `authenticate` can return a typed principal, and `admit` receives the
