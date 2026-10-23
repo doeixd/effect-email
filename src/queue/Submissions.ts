@@ -21,7 +21,11 @@ import {
   RecipientSuppressed,
   StoreUnavailable
 } from "../EmailError"
-import type { CreateDeliveryIntent } from "../DeliveryStore"
+import type {
+  CreateDeliveryIntent,
+  DeliveryEvent,
+  DeliveryIntent
+} from "../DeliveryStore"
 import { DeliveryStore } from "../DeliveryStore"
 import type {
   MessageDraft,
@@ -32,6 +36,7 @@ import { parseMailbox, prepare } from "../Message"
 import { SuppressionStore } from "../Suppression"
 import * as Metrics from "../Metrics"
 import type { RendererShape } from "../render/Template"
+import type { DeliveryStatus } from "../Submission"
 import { decideRetry } from "../RetryDecision"
 import { Email } from "../Email"
 
@@ -523,6 +528,81 @@ export const reconcileStale = (
         break
       }
       after = stale[stale.length - 1]!.deliveryId
+    }
+    return reconciled
+  })
+export const deliveryStatusEvent = (
+  intent: DeliveryIntent,
+  status: DeliveryStatus,
+  now: DateTime.Utc
+): Option.Option<DeliveryEvent> => {
+  const type =
+    status.state === "delivered"
+      ? "delivered"
+      : status.state === "bounced"
+        ? "bounced"
+        : status.state === "complained"
+          ? "complained"
+          : undefined
+  if (type === undefined) {
+    return Option.none()
+  }
+  return Option.some({
+    id: `reconciled_${intent.deliveryId}_${status.state}`,
+    deliveryId: intent.deliveryId,
+    provider: status.provider,
+    providerMessageId: status.providerMessageId,
+    type,
+    occurredAt: status.at ?? now
+  })
+}
+
+export interface UncertainLookup {
+  readonly lookup: (
+    intent: DeliveryIntent
+  ) => Effect.Effect<Option.Option<DeliveryEvent>, EmailError>
+}
+
+export const reconcileUncertain = (
+  options: UncertainLookup & {
+    readonly pageSize?: number
+    readonly now?: DateTime.Utc
+  }
+): Effect.Effect<ReadonlyArray<DeliveryId>, StoreUnavailable, DeliveryStore> =>
+  Effect.gen(function* () {
+    const store = yield* DeliveryStore
+    const pageSize = Math.max(1, options.pageSize ?? 100)
+    const now = options.now ?? (yield* DateTime.now)
+    const reconciled: Array<DeliveryId> = []
+    let after: DeliveryId | undefined
+    while (true) {
+      const page = yield* store.listUncertainPage({
+        limit: pageSize,
+        ...(after === undefined ? {} : { after })
+      })
+      for (const intent of page) {
+        if (intent.receipt === undefined) {
+          continue
+        }
+        const result = yield* Effect.result(
+          options.lookup(intent)
+        )
+        if (result._tag === "Failure") {
+          yield* Effect.logWarning(
+            "provider lookup reconciliation failed",
+            result.failure
+          )
+          continue
+        }
+        if (Option.isSome(result.success)) {
+          yield* store.appendProviderEvent(result.success.value)
+          reconciled.push(intent.deliveryId)
+        }
+      }
+      if (page.length < pageSize) {
+        break
+      }
+      after = page[page.length - 1]!.deliveryId
     }
     return reconciled
   })

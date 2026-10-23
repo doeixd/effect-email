@@ -53,6 +53,28 @@ in-progress, accepted, uncertain, and delivered intents remain available.
 Define separate retention windows for content, events, idempotency metadata,
 cancellation tombstones, and audit history before production use.
 
+## Provider lookup reconciliation
+
+Use `Submissions.reconcileUncertain` with a lookup function when the provider
+supports meaningful receipt lookup:
+
+```ts
+const reconciled = yield* Submissions.reconcileUncertain({
+  lookup: (intent) =>
+    intent.receipt === undefined
+      ? Effect.succeed(Option.none())
+      : Email.retrieve(intent.receipt).pipe(
+          Effect.map((status) =>
+            Submissions.deliveryStatusEvent(intent, status, now)
+          )
+        )
+})
+```
+
+The helper pages uncertain intents, appends only delivered/bounced/complained
+events, and leaves lookup failures observable. It cannot promise recovery when
+the provider has no usable lookup or receipt.
+
 ## Diagnostics and tracing
 
 Admission, worker, and provider operations carry Effect span annotations for

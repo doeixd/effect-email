@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, Option, Schema } from "effect"
+import { DateTime, Effect, Fiber, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import * as DeliveryStore from "../src/DeliveryStore"
 import * as Email from "../src/Email"
@@ -10,7 +10,14 @@ import {
   UnsupportedCapability
 } from "../src/EmailError"
 import type { TransportError } from "../src/EmailError"
-import { deliveryId, tenantId } from "../src/Ids"
+import {
+  deliveryId,
+  destinationId,
+  makeDestination,
+  providerMessageId,
+  tenantId
+} from "../src/Ids"
+import { makeReceipt } from "../src/Submission"
 import * as Submissions from "../src/queue/Submissions"
 import * as Mock from "../src/providers/Mock"
 import * as Template from "../src/render/Template"
@@ -710,6 +717,70 @@ describe("Submission queue", () => {
       )
     }))
 
+  it.effect("reconciles uncertain deliveries through a provider lookup", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const target = deliveryId("dlv_reconcile_lookup")
+      const layers = Layer.mergeAll(
+        DeliveryStore.layerMemory,
+        Submissions.layerFactoryMemory,
+        Email.layer({
+          defaultFrom: "billing@example.com",
+          routes: { default: client.transport }
+        })
+      )
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* DeliveryStore.DeliveryStore
+        yield* store.createIntent({
+          ...intentInput,
+          deliveryId: target
+        })
+        yield* store.beginAttempt(target, 1)
+        yield* store.recordAccepted(target, 1, makeReceipt({
+          provider: "mock",
+          destinationId: destinationId(
+            makeDestination({ provider: "mock", account: "default" })
+          ),
+          deliveryId: target,
+          providerMessageId: providerMessageId("reconcile_msg_1"),
+          acceptedAt: DateTime.makeUnsafe(new Date(0))
+        }))
+        yield* store.recordUncertain(
+          target,
+          1,
+          new TransportUnavailable({
+            message: "unknown",
+            provider: "mock"
+          })
+        )
+        const reconciled = yield* Submissions.reconcileUncertain({
+          lookup: () =>
+            Effect.succeed(
+              Option.some({
+                id: "lookup_delivered",
+                deliveryId: target,
+                provider: "mock",
+                providerMessageId: providerMessageId(
+                  "reconcile_msg_1"
+                ),
+                type: "delivered" as const,
+                occurredAt: DateTime.makeUnsafe(new Date(1_000))
+              })
+            )
+        })
+        return {
+          reconciled,
+          stored: yield* store.get(target)
+        }
+      }).pipe(Effect.provide(layers))
+
+      assert.deepStrictEqual(result.reconciled, [target])
+      assert.strictEqual(
+        Option.isSome(result.stored) && result.stored.value.status,
+        "delivered"
+      )
+    }))
   it.effect("snapshots rendered content at submission time", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

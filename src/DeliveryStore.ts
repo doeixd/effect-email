@@ -270,6 +270,10 @@ export interface DeliveryStoreShape {
     readonly limit: number
     readonly after?: DeliveryId
   }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
+  readonly listUncertainPage: (options: {
+    readonly limit: number
+    readonly after?: DeliveryId
+  }) => Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable>
   readonly listForTenant: (options: {
     readonly tenantId: TenantId
     readonly status?: DeliveryStatus
@@ -755,6 +759,20 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
                 intent.tenantId === options.tenantId &&
                 intent.status === "pending" &&
                 intent.queuedAt === undefined &&
+                (options.after === undefined ||
+                  intent.deliveryId > options.after)
+            )
+            .sort((left, right) =>
+              left.deliveryId.localeCompare(right.deliveryId)
+            )
+            .slice(0, options.limit)
+        ),
+      listUncertainPage: (options) =>
+        Effect.map(Ref.get(state), (intents) =>
+          [...intents.values()]
+            .filter(
+              (intent) =>
+                intent.status === "uncertain" &&
                 (options.after === undefined ||
                   intent.deliveryId > options.after)
             )

@@ -66,6 +66,7 @@
 - Added bounded admission/attempt/acceptance/uncertainty/retry/failure metrics.
 - Verified complaint events automatically suppress recipients when a suppression
   store is assembled; bounce suppression is opt-in.
+- Added `Submissions.reconcileUncertain` for paged provider-lookup reconciliation.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

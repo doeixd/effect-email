@@ -524,6 +524,22 @@ export const layerSql = (
             Effect.mapError(normalizeError)
           )
         },
+        listUncertainPage: (options) => {
+          const after =
+            options.after === undefined
+              ? sql``
+              : sql`AND delivery_id > ${options.after}`
+          return sql<{ readonly data: string }>`SELECT data FROM ${sql(
+            intents
+          )} WHERE status = ${"uncertain"} ${after} ORDER BY delivery_id LIMIT ${options.limit}`.pipe(
+            Effect.map((rows) =>
+              rows.map(
+                (row) => decode(JSON.parse(row.data)) as DeliveryIntent
+              )
+            ),
+            Effect.mapError(normalizeError)
+          )
+        },
         listForTenant: (options) => {
           const after =
             options.after === undefined
