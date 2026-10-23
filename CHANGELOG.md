@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - HTTP provider request failures before a response now surface as
   `DeliveryUncertain` and are not retried automatically.
