@@ -1,10 +1,11 @@
-import { Effect, Fiber, Layer, Option, Redacted } from "effect"
+import { Effect, Layer, Option, Redacted } from "effect"
 import { PgClient } from "@effect/sql-pg"
 import * as DeliveryStoreSql from "../src/DeliveryStoreSql"
 import * as Email from "../src/Email"
 import { deliveryId, tenantId } from "../src/Ids"
 import * as Mock from "../src/providers/Mock"
 import * as Submissions from "../src/queue/Submissions"
+import * as Service from "../src/Service"
 import * as SubmissionAdmission from "../src/SubmissionAdmission"
 
 const url = process.env.DATABASE_URL
@@ -50,17 +51,14 @@ const program = Effect.gen(function* () {
       }
     })
 
-    const worker = yield* Submissions.runWorker({
-      concurrency: 2
-    }).pipe(Effect.forkScoped)
-    const publisher = yield* Submissions.runPublisher({
+    const service = yield* Service.start({
       queue: admission.queue,
       tenantId: tenant,
-      intervalMillis: 100
-    }).pipe(Effect.forkScoped)
-    const reconciler = yield* Submissions.runReconciler({
-      intervalMillis: 1_000
-    }).pipe(Effect.forkScoped)
+      workerConcurrency: 2,
+      publisherIntervalMillis: 100,
+      reconcilerIntervalMillis: 1_000,
+      pageSize: 100
+    })
 
     const status = yield* Effect.gen(function* () {
       while (true) {
@@ -76,13 +74,13 @@ const program = Effect.gen(function* () {
       }
     }).pipe(Effect.timeout("10 seconds"))
 
-    yield* Fiber.interrupt(worker)
-    yield* Fiber.interrupt(publisher)
-    yield* Fiber.interrupt(reconciler)
+    const health = yield* service.health
+    yield* service.shutdown
 
     return {
       receipt,
       status,
+      health,
       messages: (yield* client.inbox.messages).length
     }
   }).pipe(Effect.provide(app), Effect.scoped)

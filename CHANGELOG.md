@@ -70,6 +70,8 @@
 - Gateway diagnostics and health now use grouped status counts instead of loading
   all pending, failed, and uncertain intents.
 - Added `Email.layerValidated` for typed configuration failures.
+- Added the scoped `Service.start` runtime helper with worker/publisher/
+  reconciler health and shutdown.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

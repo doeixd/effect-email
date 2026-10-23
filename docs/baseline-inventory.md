@@ -11,7 +11,7 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 297 tests across 59 files.
+- `bun run check`: pass, 298 tests across 60 files.
 - PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
   transactional rollback and concurrent delivery isolation.
 - `bun run smoke`: pass against the built package.
@@ -140,6 +140,8 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
   all pending, failed, and uncertain intents.
 - `Email.layerValidated` returns typed configuration failures for invalid
   senders, empty routes, and unknown default routes.
+- `Service.start` exposes scoped publisher/worker/reconciler health and explicit
+  shutdown without hiding listeners.
 - Provider support is labeled by evidence in `docs/provider-support.md`; SMTP
   covers slow clients and invalid-command recovery.
 - Cancellation prevents future dispatch when the worker observes it; it cannot

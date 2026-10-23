@@ -13,17 +13,17 @@ PgClient
   -> Email (provider transport)
 ```
 
-Run the publisher, worker, and reconciler as scoped fibers. They are separate
-loops:
+Run the publisher, worker, and reconciler through `Service.start`. It returns a
+scoped handle with `health` and `shutdown`, and the three loops remain separate:
 
 - The publisher recovers committed-but-unqueued intents.
 - The worker claims and dispatches queue items.
 - The reconciler turns expired or stale in-progress claims into observable
   uncertainty.
 
-The example accepts one message, starts all three loops, waits for a terminal
-status, then closes the scope. Closing the scope interrupts the loops and
-releases the SQL client.
+The example accepts one message, starts the service, waits for a terminal
+status, reads health, then shuts down. Closing the scope also interrupts the
+loops and releases the SQL client.
 
 ## Readiness and liveness
 

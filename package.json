@@ -10,6 +10,7 @@
     "./Email": "./dist/Email.js",
     "./EmailTransport": "./dist/EmailTransport.js",
     "./Routing": "./dist/Routing.js",
+    "./Service": "./dist/Service.js",
     "./TransportRegistry": "./dist/TransportRegistry.js",
     "./EmailError": "./dist/EmailError.js",
     "./DeliveryStore": "./dist/DeliveryStore.js",
