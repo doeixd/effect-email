@@ -61,6 +61,8 @@
 - Added a provider evidence matrix, Effect dependency strategy, and release
   qualification guidance.
 - Added SMTP slow-client and invalid-command recovery coverage.
+- Added `smoke:tarball` to build, pack, extract, verify exports, and import
+  packaged root/provider/gateway/workflow/SMTP modules.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

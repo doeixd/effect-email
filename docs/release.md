@@ -17,6 +17,7 @@ bun run typecheck
 bun run test
 bun run build
 bun run smoke
+bun run smoke:tarball
 bun examples/quick-start.ts
 npm pack --dry-run
 ```

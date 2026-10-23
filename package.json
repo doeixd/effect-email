@@ -115,6 +115,7 @@
     "test": "vitest run",
     "build": "node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:tarball": "node scripts/tarball-smoke.mjs",
     "prepack": "node scripts/build.mjs && node scripts/smoke.mjs",
     "check": "node scripts/build.mjs && tsc -p tsconfig.json --noEmit && vitest run",
     "pretest": "node scripts/build.mjs"

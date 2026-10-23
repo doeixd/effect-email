@@ -23,7 +23,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 9 | Partial | Typed event waits, dispatch-time suppression, cancellation outcomes, and uncertain-redrive acknowledgment are implemented; automatic hard-bounce suppression and wait deadlines remain |
 | 10 | Partial | PostgreSQL service example, three-level README, production assembly guide, glossary, and scoped shutdown are implemented; typed configuration errors and the optional runtime helper remain |
 | 11 | Partial | Tenant/status paging, redrive audit, retention safety, and operations docs are implemented; legacy diagnostic scans, first-class metrics, and provider-lookup reconciliation remain |
-| 12 | Partial | Provider evidence matrix, SMTP slow-client/invalid-command coverage, dependency strategy, and release guidance added; live sandbox tests and automated tarball smoke remain |
+| 12 | Partial | Provider evidence matrix, SMTP slow-client/invalid-command coverage, dependency strategy, release guidance, and tarball smoke added; live sandbox tests remain |
 
 ## 1. Objective
 
@@ -83,7 +83,7 @@ Still current:
 - Some startup configuration failures are still defects rather than typed errors.
 - Legacy diagnostics still use unbounded scans; first-class metrics and
   provider-lookup reconciliation remain.
-- No live provider sandbox suite or automated tarball import smoke is enabled.
+- No live provider sandbox suite is enabled.
 
 ## 3. Target ownership
 

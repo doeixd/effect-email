@@ -146,7 +146,7 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Hard-bounce/complaint auto-suppression is not automatic | Verified events are stored and projected | Operators must apply suppression policy explicitly |
 | Legacy diagnostics still use unbounded scans | Gateway/catcher `listAll` paths | New tenant-scoped paging exists, but the legacy endpoints are not migrated |
 | Metrics and provider-lookup reconciliation are limited | Effect spans/annotations only | No first-class metric set or automatic provider retrieval reconciliation |
-| No live provider sandbox suite or automated tarball smoke | Contract tests use local fixtures | Sandbox parity and installed-package imports remain release hardening |
+| No live provider sandbox suite | Contract tests use local fixtures | Sandbox parity remains release hardening |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
 | Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |

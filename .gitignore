@@ -5,6 +5,7 @@ coverage/
 .env
 .env.*
 *.tgz
+.tarball-smoke/
 .alchemy/
 .wrangler/
 *.eml
