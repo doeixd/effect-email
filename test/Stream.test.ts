@@ -13,6 +13,57 @@ const inputs = [
 ] as const
 
 describe("Email.sendStream", () => {
+  it.effect("keeps replay keys stable and distinct across stream chunks", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      const transport = { ...client.transport, capabilities: { ...client.transport.capabilities, nativeBatch: false } }
+      const stream = Email.sendStream(Stream.fromIterable(inputs), {
+        chunkSize: 2, providerIdempotencyKey: "stream:42"
+      })
+      yield* Stream.runDrain(stream).pipe(Effect.provide(Email.layer({ defaultFrom: "sender@example.com", routes: { default: transport } })))
+      yield* Stream.runDrain(stream).pipe(Effect.provide(Email.layer({ defaultFrom: "sender@example.com", routes: { default: transport } })))
+      const sent = yield* client.inbox.messages
+      const keys = sent.map((item) => item.providerIdempotencyKey)
+      assert.deepStrictEqual(keys.slice(0, 5), keys.slice(5))
+      assert.strictEqual(new Set(keys.slice(0, 5)).size, 5)
+    }))
+
+  for (const native of [false, true]) {
+    it.live(`limits all ${native ? "native batch" : "single"} sends across chunks to stream concurrency`, () =>
+      Effect.gen(function* () {
+        const client = yield* Mock.makeClient()
+        let active = 0
+        let peak = 0
+        const track = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          Effect.acquireUseRelease(
+            Effect.sync(() => { active++; peak = Math.max(peak, active) }),
+            () => effect.pipe(Effect.delay("5 millis")),
+            () => Effect.sync(() => { active-- })
+          )
+        const transport = native
+          ? {
+              ...client.transport,
+              capabilities: { ...client.transport.capabilities, maxBatchSize: 1 },
+              sendBatch: (envelopes: ReadonlyArray<import("../src/Submission").PreparedEnvelope>) =>
+                track(client.transport.sendBatch(envelopes))
+            }
+          : {
+              ...client.transport,
+              capabilities: { ...client.transport.capabilities, nativeBatch: false },
+              send: (envelope: import("../src/Submission").PreparedEnvelope) => track(client.transport.send(envelope))
+            }
+        const stream = Email.sendStream(Stream.fromIterable(Array.from({ length: 32 }, () => inputs[0])), {
+          concurrency: 4, chunkSize: 8
+        })
+        const outcomes = yield* Stream.runCollect(stream).pipe(Effect.provide(Email.layer({
+          defaultFrom: "billing@example.com", routes: { default: transport }
+        })))
+        assert.strictEqual(peak, 4)
+        assert.strictEqual(active, 0)
+        assert.deepStrictEqual(Array.from(outcomes).map((outcome) => outcome.index), Array.from({ length: 32 }, (_, index) => index))
+      }))
+  }
+
   it.effect("keeps ordered, globally indexed outcomes across bounded chunks", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()

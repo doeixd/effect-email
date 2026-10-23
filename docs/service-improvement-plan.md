@@ -2,7 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `1b8f168` (0.4.0)
+Current baseline: 0.3.0 release candidate, including the follow-up correctness,
+security, and performance fixes. `1b8f168` is a historical development snapshot.
 Status: PR 1-4 and 6-8 complete; PR 5, 9, and 12 partial; PRs 10 and 11 complete
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`

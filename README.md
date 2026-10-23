@@ -4,6 +4,9 @@
 delivery, provider adapters, retry and fallback policies, SMTP, HTTP admission,
 workflows, and suppression, built on Effect v4.
 
+Upgrading from 0.2.x? Read the [0.3 upgrade guide](./docs/upgrading-0.3.md)
+before restarting durable workers or resubmitting persisted workflows.
+
 An independent Effect port of [unemail](https://github.com/productdevbook/unemail).
 See [`NOTICE`](./NOTICE) for upstream attribution.
 
@@ -27,12 +30,12 @@ See [`NOTICE`](./NOTICE) for upstream attribution.
 ## Install
 
 ```sh
-bun add @doeixd/effect-email effect
+bun add @doeixd/effect-email effect@4.0.6
 # or
-npm install @doeixd/effect-email effect
+npm install @doeixd/effect-email effect@4.0.6
 ```
 
-Node 22 or newer is required for the Node HTTP and SMTP bindings.
+Node 22.19.0 or newer is required for the Node HTTP and SMTP bindings.
 
 ## Quick start
 
@@ -307,6 +310,44 @@ const receipt = yield* SubmissionAdmission.accept({
 are available through `DeliveryStoreSql.layerSql` and
 `Submissions.layerFactorySql`.
 
+Pass a custom admission queue as `Submissions.runWorker({ queue })` or to
+`Service.start({ queue, tenantId })`; the service consumes that same queue.
+Workers reschedule deferred submissions with queue visibility delays, preserving
+the delivery's provider-attempt budget while other mail continues. Direct users
+of `processSubmission` must handle its early `RateLimited` result by rescheduling
+the job; it no longer sleeps until `nextAttemptAt`.
+
+Provider events may include `providerMessageId` and `dispatchGeneration`.
+After redrive, supply the current provider message ID or dispatch generation so
+an earlier attempt's events cannot update the new delivery. Provider lookups can
+also reconcile uncertain submissions without receipts, using their delivery ID
+or provider idempotency key.
+
+Workflow keys now use a versioned, unambiguous encoding. Existing persisted
+workflows keep their old execution IDs: drain or explicitly migrate in-flight
+workflows before upgrading, rather than resubmitting them under new keys.
+Typed and purpose-specific event waits register durable subscriptions in the
+delivery store; the gateway wakes all matching subscriptions, including on
+verified webhook replay. Failed suppression or workflow notification returns
+HTTP 503 so webhook senders can retry. Custom delivery stores must implement
+`getEvent(id)` and the event-wait registration, removal, and listing methods.
+Replay uses the canonical stored event body. Interrupt waits with
+`interruptDeliveryEventWait` in a context containing the delivery store so their
+subscriptions are removed.
+
+Batch idempotency keys require the same input order on replay; stream replay
+also requires the same chunk size. Provider keys and generated delivery IDs are
+stable per slot. Active deliveries reject redrive until reconciliation has
+established an uncertain or terminal outcome.
+Each redrive persists a new provider idempotency key; retries within that
+dispatch retain it. Reusing a delivery ID with changed SMTP envelope addresses
+fails with an idempotency conflict.
+
+SMTP clients accept `connectTimeoutMillis` (default 10 seconds),
+`commandTimeoutMillis` (default 30 seconds), and `cleanupTimeoutMillis` (default
+100 milliseconds). Confirmed DATA acceptance is returned without waiting for
+optional reset or quit replies; interrupted pooled sessions are discarded.
+
 ## HTTP gateway
 
 ```ts
@@ -436,7 +477,7 @@ error causes.
 
 ## Runtime support
 
-| Capability | Node 22+ | Bun | Deno | Workers |
+| Capability | Node 22.19+ | Bun | Deno | Workers |
 | --- | --- | --- | --- | --- |
 | Core, policies, templates, spool | yes | yes | yes | yes |
 | HTTP providers | yes | yes | yes | yes |
@@ -449,6 +490,7 @@ See [`docs/runtime-matrix.md`](./docs/runtime-matrix.md) for details.
 
 ## Documentation
 
+- [Upgrading to 0.3](./docs/upgrading-0.3.md)
 - [Implementation plan](https://github.com/doeixd/effect-email/blob/main/docs/effect-email-implementation-plan.md)
 - [Driver parity](./docs/driver-parity.md)
 - [Provider support matrix](./docs/provider-support.md)

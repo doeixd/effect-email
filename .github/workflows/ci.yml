@@ -25,10 +25,15 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/effect_email
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
+      - run: bun run check
       - run: bun run effect:diagnostics
-      - run: bun run test
+      - run: bun run smoke
+      - run: bun run smoke:tarball
+      - run: bun examples/quick-start.ts

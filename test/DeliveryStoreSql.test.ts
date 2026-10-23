@@ -15,6 +15,7 @@ import {
   TransportUnavailable
 } from "../src/EmailError"
 import { makeReceipt } from "../src/Submission"
+import { TestClock } from "effect/testing"
 
 const target = deliveryId("dlv_sql_store_1")
 
@@ -33,6 +34,170 @@ const input = {
 } as const
 
 describe("DeliveryStore SQL", () => {
+  const stores = [["memory", layerMemory], ["SQL", layer]] as const
+  for (const [name, storeLayer] of stores) {
+    it.effect(`${name}: active attempts reject redrive even with acknowledgment`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        yield* store.createIntent(input)
+        const active = yield* store.beginAttempt(target, 1)
+        for (const options of [undefined, { acknowledgeDuplicateRisk: true }]) {
+          const result = yield* Effect.result(store.redrive(target, options))
+          assert.strictEqual(result._tag === "Failure" && result.failure._tag, "StoreUnavailable")
+        }
+        const stored = yield* store.get(target)
+        assert.strictEqual(Option.isSome(stored) && stored.value.claimId, active.claimId)
+        assert.strictEqual(Option.isSome(stored) && stored.value.dispatchGeneration, 1)
+      }).pipe(Effect.provide(storeLayer)))
+
+    it.effect(`${name}: scopes provider correlation before selecting the latest receipt`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        const messageId = providerMessageId("account-scoped-id")
+        const accountA = destinationId(makeDestination({ provider: "mock", account: "a" }))
+        const accountB = destinationId(makeDestination({ provider: "mock", account: "b" }))
+        for (const [id, destination] of [[target, accountA], [deliveryId("other-account"), accountB]] as const) {
+          yield* store.createIntent({ ...input, deliveryId: id })
+          yield* store.beginAttempt(id, 1)
+          yield* store.recordAccepted(id, 1, makeReceipt({
+            provider: "mock", destinationId: destination, providerMessageId: messageId,
+            acceptedAt: yield* DateTime.now
+          }))
+          yield* TestClock.adjust(1)
+        }
+        const scoped = yield* store.findByProviderMessageId(messageId, { provider: "mock", destinationId: accountA })
+        assert.strictEqual(Option.isSome(scoped) && scoped.value.deliveryId, target)
+        yield* store.appendProviderEvent({
+          id: "scoped-event", provider: "mock", destinationId: accountA,
+          providerMessageId: messageId, type: "delivered", occurredAt: yield* DateTime.now
+        })
+        const projected = yield* store.get(target)
+        assert.strictEqual(Option.isSome(projected) && projected.value.status, "delivered")
+        assert.strictEqual((yield* store.listEvents(target)).length, 1)
+        const other = yield* store.get(deliveryId("other-account"))
+        assert.strictEqual(Option.isSome(other) && other.value.status, "accepted")
+      }).pipe(Effect.provide(storeLayer)))
+
+    it.effect(`${name}: preserves durable wait subscriptions in backup and restore`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        const wait = { executionId: "wait-1", tenantId: tenantId("wait-tenant"), deliveryId: target, types: ["delivered"] as const }
+        yield* store.registerEventWait(wait)
+        yield* store.registerEventWait({ ...wait, types: ["bounced"] })
+        const snapshot = yield* store.snapshot
+        yield* store.removeEventWait(wait.executionId)
+        assert.deepStrictEqual(yield* store.listEventWaits(target), [])
+        yield* store.restore(snapshot)
+        assert.deepStrictEqual(yield* store.listEventWaits(target), [wait])
+        yield* store.removeEventWait(wait.executionId)
+        yield* store.removeEventWait(wait.executionId)
+        assert.deepStrictEqual(yield* store.listEventWaits(target), [])
+      }).pipe(Effect.provide(storeLayer)))
+
+    it.effect(`${name}: cancellation prevents atomic claim acquisition`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        yield* store.createIntent(input)
+        assert.strictEqual(yield* store.requestCancellation(target), "canceled-before-dispatch")
+        const attempt = yield* store.beginAttempt(target, 1)
+        assert.strictEqual(attempt.status, "canceled")
+        assert.isUndefined(attempt.claimId)
+        assert.strictEqual(attempt.attempts, 0)
+      }).pipe(Effect.provide(storeLayer)))
+
+    it.effect(`${name}: rejects events for earlier provider messages and generations`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        const destination = destinationId(makeDestination({ provider: "mock", account: "default" }))
+        const receipt = (id: string) => makeReceipt({
+          provider: "mock", destinationId: destination,
+          providerMessageId: providerMessageId(id),
+          acceptedAt: DateTime.makeUnsafe(0)
+        })
+        yield* store.createIntent(input)
+        yield* store.beginAttempt(target, 1)
+        yield* store.recordAccepted(target, 1, receipt("old"))
+        yield* store.redrive(target)
+        yield* store.beginAttempt(target, 2)
+        yield* store.recordAccepted(target, 2, receipt("new"))
+        for (const [id, messageId, generation] of [["old-message", "old", undefined], ["old-generation", "new", 1]] as const) {
+          yield* store.appendProviderEvent({
+            id, deliveryId: target, provider: "mock", destinationId: destination,
+            providerMessageId: providerMessageId(messageId), dispatchGeneration: generation,
+            type: "bounced", occurredAt: DateTime.makeUnsafe(1_000)
+          })
+        }
+        const accepted = yield* store.get(target)
+        assert.strictEqual(Option.isSome(accepted) && accepted.value.status, "accepted")
+        yield* store.appendProviderEvent({
+          id: "current", deliveryId: target, provider: "mock", destinationId: destination,
+          providerMessageId: providerMessageId("new"), dispatchGeneration: 2,
+          type: "delivered", occurredAt: DateTime.makeUnsafe(2_000)
+        })
+        const delivered = yield* store.get(target)
+        assert.strictEqual(Option.isSome(delivered) && delivered.value.status, "delivered")
+      }).pipe(Effect.provide(storeLayer)))
+
+    it.effect(`${name}: queue publication preserves an active worker claim`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        yield* store.createIntent(input)
+        const claimed = yield* store.beginAttempt(target, 1)
+        yield* store.markQueued(target, 1)
+        const queued = Option.getOrElse(
+          yield* store.get(target), () => assert.fail("expected queued intent")
+        )
+        assert.strictEqual(queued.claimId, claimed.claimId)
+        assert.deepStrictEqual(queued.claimExpiresAt, claimed.claimExpiresAt)
+        assert.deepStrictEqual(queued.updatedAt, claimed.updatedAt)
+        assert.isDefined(queued.queuedAt)
+        const duplicate = yield* Effect.result(
+          store.beginAttempt(target, 1)
+        )
+        assert.strictEqual(duplicate._tag, "Failure")
+        yield* store.recordAccepted(
+          target, 1,
+          makeReceipt({
+            provider: "mock",
+            destinationId: destinationId(
+              makeDestination({ provider: "mock", account: "default" })
+            ),
+            acceptedAt: yield* DateTime.now
+          }),
+          claimed.claimId
+        )
+        const accepted = yield* store.get(target)
+        assert.strictEqual(
+          Option.isSome(accepted) && accepted.value.status, "accepted"
+        )
+      }).pipe(Effect.provide(storeLayer)))
+
+    it.effect(`${name}: rejects reuse of another tenant's delivery id`, () =>
+      Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        const first = yield* store.createIntent({
+          ...input, tenantId: tenantId("tenant-a")
+        })
+        const replay = yield* store.createIntent({
+          ...input, tenantId: tenantId("tenant-a")
+        })
+        assert.strictEqual(replay.fingerprint, first.fingerprint)
+        for (const otherTenant of [tenantId("tenant-b"), undefined]) {
+          const result = yield* Effect.result(
+            store.createIntent({ ...input, tenantId: otherTenant })
+          )
+          assert.strictEqual(
+            result._tag === "Failure" && result.failure._tag,
+            "IdempotencyConflict"
+          )
+        }
+        const stored = yield* store.get(target)
+        assert.strictEqual(
+          Option.isSome(stored) && stored.value.tenantId, tenantId("tenant-a")
+        )
+      }).pipe(Effect.provide(storeLayer)))
+  }
+
   it.effect("persists cancellation tombstones", () =>
     Effect.gen(function* () {
       const store = yield* DeliveryStore

@@ -16,7 +16,8 @@ You should receive an acknowledgment before public disclosure.
 
 ## Supported versions
 
-Security fixes target the latest published `0.1.x` release.
+Security fixes target the latest published minor release. The 0.3 release
+supersedes 0.2.x; upgrade guidance is in [`docs/upgrading-0.3.md`](./docs/upgrading-0.3.md).
 
 ## Security defaults
 

@@ -1,6 +1,6 @@
 {
   "name": "@doeixd/effect-email",
-  "version": "0.4.0",
+  "version": "0.3.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -94,6 +94,17 @@
     "docs/driver-parity.md",
     "docs/runtime-matrix.md",
     "docs/postgres.md",
+    "docs/upgrading-0.3.md",
+    "docs/dependency-strategy.md",
+    "docs/provider-support.md",
+    "docs/policy-composition.md",
+    "docs/production-assembly.md",
+    "docs/operations.md",
+    "docs/glossary.md",
+    "docs/routing.md",
+    "docs/baseline-inventory.md",
+    "docs/service-improvement-plan.md",
+    "docs/adr",
     "docs/release.md",
     "README.md",
     "CHANGELOG.md",
@@ -107,7 +118,7 @@
     "docs/review-plan.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19.0"
   },
   "publishConfig": {
     "access": "public"

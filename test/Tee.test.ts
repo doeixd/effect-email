@@ -104,7 +104,7 @@ describe("EmailTransport.withTee", () => {
         to: "user@example.com",
         subject: "Tee",
         text: "Body"
-      }).pipe(
+      }, { rawEnvelope: { mailFrom: null, rcptTo: ["user@example.com"] } }).pipe(
         Effect.provide(
           Email.layer({
             defaultFrom: "sender@example.com",
@@ -119,10 +119,14 @@ describe("EmailTransport.withTee", () => {
         mirrored[0]?.envelope.message.to[0]?.address,
         "sink@example.com"
       )
+      assert.deepStrictEqual(mirrored[0]?.envelope.rawEnvelope, {
+        mailFrom: null, rcptTo: ["sink@example.com"]
+      })
       const delivered = yield* primary.attempts
       assert.strictEqual(
         delivered[0]?.envelope.message.to[0]?.address,
         "user@example.com"
       )
+      assert.deepStrictEqual(delivered[0]?.envelope.rawEnvelope?.rcptTo, ["user@example.com"])
     }))
 })

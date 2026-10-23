@@ -52,6 +52,43 @@ describe("SMTP line framing", () => {
 })
 
 describe("SMTP DATA decoding", () => {
+  it("bounds discard memory across repeated oversized chunks", () => {
+    let result = Smtp.pushData(Smtp.emptyDataDecoder, bytes("x".repeat(100)), 64)
+    assert.isTrue(result.tooLarge)
+    for (let index = 0; index < 20; index++) {
+      result = Smtp.pushData(result.decoder, bytes("x".repeat(4096)), 64)
+      assert.isTrue(result.tooLarge)
+      assert.isAtMost(result.decoder.buffer.length, 4)
+      assert.isUndefined(result.decoder.chunks)
+    }
+    const complete = Smtp.pushData(result.decoder, bytes("\r\n.\r\nQUIT\r\n"), 64)
+    assert.isTrue(complete.complete)
+    assert.isTrue(complete.tooLarge)
+    assert.strictEqual(text(complete.remainder!), "QUIT\r\n")
+  })
+
+  it("preserves bytes and terminators at every packet boundary", () => {
+    const content = "Subject: test\r\n\r\n..dot\r\n...two\r\nbody\r\n"
+    const wire = bytes(content + ".\r\nQUIT\r\n")
+    for (let split = 1; split < wire.length - 6; split++) {
+      const first = Smtp.pushData(Smtp.emptyDataDecoder, wire.slice(0, split), bytes(content).length)
+      const second = Smtp.pushData(first.decoder, wire.slice(split), bytes(content).length)
+      assert.isTrue(second.complete)
+      assert.isFalse(second.tooLarge)
+      assert.strictEqual(text(second.content!), content.replace("..dot", ".dot").replace("...two", "..two"))
+      assert.strictEqual(text(second.remainder!), "QUIT\r\n")
+    }
+  })
+
+  it("accepts an empty DATA payload with a split terminator", () => {
+    const first = Smtp.pushData(Smtp.emptyDataDecoder, bytes("."), 0)
+    const second = Smtp.pushData(first.decoder, bytes("\r\nQUIT\r\n"), 0)
+    assert.isTrue(second.complete)
+    assert.isFalse(second.tooLarge)
+    assert.strictEqual(second.content!.length, 0)
+    assert.strictEqual(text(second.remainder!), "QUIT\r\n")
+  })
+
   it("recognizes a terminator split across packets and unstuffs dots", () => {
     const first = Smtp.pushData(
       Smtp.emptyDataDecoder,

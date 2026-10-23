@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect, Layer, Option, Redacted } from "effect"
+import { DateTime, Effect, Fiber, Layer, Option, Redacted } from "effect"
+import * as Reactivity from "effect/reactivity/Reactivity"
 import { PgClient } from "@effect/sql-pg"
 import * as SqlClient from "effect/sql/SqlClient"
 import { DeliveryStore } from "../src/DeliveryStore"
@@ -21,6 +22,58 @@ const tenant = tenantId("tenant_pg")
 const delivery = deliveryId("dlv_pg_1")
 
 describe("PostgreSQL integration", () => {
+  for (const first of ["create", "cancel"] as const) {
+    it.live.skipIf(url === undefined)(`serializes absent-intent cancellation (${first} starts first)`, () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        const store = yield* DeliveryStore
+        const observer = yield* PgClient.make({ url: Redacted.make(url ?? ""), maxConnections: 1 }).pipe(Effect.provide(Reactivity.layer))
+        const barrier = first === "create" ? 9382701 : 9382702
+        const table = `${deliveryTable}_${first}`
+        const functionName = `pause_${suffix}_${first}`
+        const pausedTable = `${table}_${first === "create" ? "intents" : "cancellations"}`
+        const id = deliveryId(`cancel_race_${first}`)
+        yield* sql.unsafe(`CREATE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(${barrier}); RETURN NEW; END $$`)
+        yield* sql.unsafe(`CREATE TRIGGER pause_insert BEFORE INSERT ON ${pausedTable} FOR EACH ROW EXECUTE FUNCTION ${functionName}()`)
+        yield* Effect.acquireUseRelease(
+          observer.unsafe(`SELECT pg_advisory_lock(${barrier})`),
+          () => Effect.gen(function* () {
+            const create = store.createIntent({
+              deliveryId: id, tenantId: tenant,
+              message: { to: "race@example.com", subject: "Cancel race", text: "Body" },
+              defaultFrom: "sender@example.com"
+            })
+            const cancel = store.requestCancellation(id)
+            const initial = yield* (first === "create" ? create.pipe(Effect.asVoid) : cancel.pipe(Effect.asVoid)).pipe(Effect.forkChild)
+            const waitForBlocked = (count: number) => Effect.gen(function* () {
+              while (true) {
+                const rows = yield* observer<{ readonly count: string }>`SELECT count(*) AS count FROM pg_stat_activity WHERE wait_event = 'advisory' AND application_name = ${table}`
+                if (Number(rows[0]!.count) >= count) return
+                yield* Effect.sleep(5)
+              }
+            }).pipe(Effect.timeout("2 seconds"))
+            yield* waitForBlocked(1)
+            const following = yield* (first === "create" ? cancel.pipe(Effect.asVoid) : create.pipe(Effect.asVoid)).pipe(Effect.forkChild)
+            yield* waitForBlocked(2)
+            assert.isUndefined(following.pollUnsafe())
+            yield* observer.unsafe(`SELECT pg_advisory_unlock(${barrier})`)
+            yield* Fiber.join(initial)
+            yield* Fiber.join(following)
+            assert.strictEqual(yield* store.isCancellationRequested(id), true)
+            const claimed = yield* store.beginAttempt(id, 1)
+            assert.strictEqual(claimed.status, "canceled")
+            assert.isUndefined(claimed.claimId)
+            assert.strictEqual(claimed.attempts, 0)
+          }),
+          () => observer.unsafe(`SELECT pg_advisory_unlock(${barrier})`).pipe(Effect.orDie)
+        )
+      }).pipe(Effect.provide(
+        DeliveryStoreSql.layerSql({ tableName: `${deliveryTable}_${first}` }).pipe(
+          Layer.provideMerge(PgClient.layer({ url: Redacted.make(url ?? ""), applicationName: `${deliveryTable}_${first}` }))
+        )
+      ), Effect.scoped))
+  }
+
   it.effect.skipIf(url === undefined)(
     "rolls back delivery and queue writes in one transaction",
     () =>

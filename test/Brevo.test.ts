@@ -203,7 +203,12 @@ describe("Brevo", () => {
         { providerIdempotencyKey: key }
       ).pipe(Effect.provide(emailLayerFor(transport)))
 
-      assert.strictEqual(keys.length, 1)
+      yield* Email.sendBatch([
+        { to: "one@example.com", subject: "First", text: "One" },
+        { to: "two@example.com", subject: "Second", text: "Two" }
+      ], { providerIdempotencyKey: key }).pipe(Effect.provide(emailLayerFor(transport)))
+      assert.strictEqual(keys.length, 2)
+      assert.strictEqual(keys[0], keys[1])
       assert.match(
         keys[0]!,
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/

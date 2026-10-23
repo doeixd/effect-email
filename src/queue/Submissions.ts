@@ -1,10 +1,12 @@
 import {
   Clock,
   DateTime,
+  Duration,
   Effect,
   Layer,
   Metric,
   Option,
+  Pull,
   Schedule,
   Schema
 } from "effect"
@@ -18,6 +20,7 @@ import type { EmailError } from "../EmailError"
 import {
   certaintyOf,
   DeliveryUncertain,
+  RateLimited,
   RecipientSuppressed,
   StoreUnavailable
 } from "../EmailError"
@@ -44,7 +47,8 @@ export const SubmissionJob = Schema.Struct({
   version: Schema.Literals([1]),
   tenantId: TenantIdSchema,
   deliveryId: DeliveryIdSchema,
-  dispatchGeneration: Schema.Int
+  dispatchGeneration: Schema.Int,
+  retry: Schema.optionalKey(Schema.Natural)
 })
 export type SubmissionJob = typeof SubmissionJob.Type
 
@@ -54,6 +58,11 @@ export interface SubmissionQueueOptions {
   readonly retrySchedule?: Schedule.Schedule<any, number>
 }
 
+const queueOptions = Symbol("@effect-email/SubmissionQueueOptions")
+type ConfiguredQueue = PersistedQueue.PersistedQueue<SubmissionJob> & {
+  readonly [queueOptions]: SubmissionQueueOptions
+}
+
 export const make = (
   options: SubmissionQueueOptions = {}
 ): Effect.Effect<
@@ -61,14 +70,14 @@ export const make = (
   never,
   PersistedQueue.PersistedQueueFactory
 > =>
-  PersistedQueue.make({
+  Effect.map(PersistedQueue.make({
     name: options.name ?? "email.submissions.v1",
     schema: SubmissionJob,
     maxAttempts: options.maxAttempts ?? 10,
     ...(options.retrySchedule === undefined
       ? {}
       : { retrySchedule: options.retrySchedule })
-  })
+  }), (queue) => ({ ...queue, [queueOptions]: { ...options } }))
 
 export const layerFactoryMemory: Layer.Layer<
   PersistedQueue.PersistedQueueFactory
@@ -90,17 +99,37 @@ export const layerFactorySql = (
 export const queueId = (job: SubmissionJob): string =>
   `${encodeURIComponent(job.tenantId)}:${encodeURIComponent(
     job.deliveryId
-  )}:${job.dispatchGeneration}`
+  )}:${job.dispatchGeneration}${job.retry === undefined ? "" : `:retry:${job.retry}`}`
 
 export const offer = (
   queue: PersistedQueue.PersistedQueue<SubmissionJob>,
-  job: SubmissionJob
+  job: SubmissionJob,
+  options: { readonly delayMillis?: number } = {}
 ): Effect.Effect<
   string,
   PersistedQueue.PersistedQueueError | Schema.SchemaError
-> => queue.offer(job, { id: queueId(job) })
+> => queue.offer(job, {
+  id: queueId(job),
+  ...(options.delayMillis === undefined ? {} : { delay: options.delayMillis })
+})
 
 export const layerCleanup = PersistedQueue.layerCleanup
+
+const retryDelayMillis = (attempts: number, schedule?: Schedule.Schedule<any, number>) =>
+  Effect.gen(function* () {
+    const step = yield* Schedule.toStep(schedule ?? Schedule.min([
+      Schedule.exponential("1 second"), Schedule.spaced("5 minutes")
+    ]))
+    let now = 0
+    let delay = 0
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const next = yield* Pull.catchDone(step(now, attempt), () => Effect.undefined)
+      if (next === undefined) break
+      delay = Duration.toMillis(next[1])
+      now += delay
+    }
+    return delay
+  })
 
 export const redrive = (
   queue: PersistedQueue.PersistedQueue<SubmissionJob>,
@@ -331,7 +360,10 @@ const terminal = (
 export const processSubmission = (
   job: SubmissionJob,
   metadata: { readonly id: string; readonly attempts: number },
-  options: { readonly maxAttempts?: number } = {}
+  options: {
+    readonly maxAttempts?: number
+    readonly retrySchedule?: Schedule.Schedule<any, number>
+  } = {}
 ): Effect.Effect<void, EmailError, DeliveryStore | Email> =>
   Effect.gen(function* () {
     const store = yield* DeliveryStore
@@ -361,52 +393,56 @@ export const processSubmission = (
       const delay =
         DateTime.toEpochMillis(intent.nextAttemptAt) - now
       if (delay > 0) {
-        yield* Effect.sleep(delay)
-      }
-      const refreshed = yield* store.get(job.deliveryId)
-      if (Option.isNone(refreshed)) {
-        return yield* StoreUnavailable.new({
-          message: `delivery intent not found: ${job.deliveryId}`
+        return yield* RateLimited.new({
+          message: "submission is not due yet",
+          provider: "submission-worker",
+          retryAfterMillis: delay,
+          retryable: true
         })
-      }
-      if (
-        refreshed.value.dispatchGeneration !== job.dispatchGeneration ||
-        terminal(refreshed.value.status) ||
-        refreshed.value.cancellationRequested
-      ) {
-        return
       }
     }
 
     const suppression = yield* Effect.serviceOption(SuppressionStore)
-    if (Option.isSome(suppression)) {
-      const blocked = yield* suppression.value.suppressed(
+    const blocked = Option.isSome(suppression)
+      ? yield* suppression.value.suppressed(
         job.tenantId,
-        recipientsOf(intent.message)
+        [
+          ...new Set([
+            ...recipientsOf(intent.message),
+            ...(intent.rawEnvelope?.rcptTo ?? [])
+          ])
+        ]
       )
-      if (blocked.length > 0) {
-        yield* store.recordFailed(
-          job.deliveryId,
-          job.dispatchGeneration,
-          new RecipientSuppressed({
-            message: `recipient is suppressed: ${blocked.join(", ")}`,
-            recipients: blocked
-          })
-        )
-        return
-      }
-    }
+      : []
 
     const claimed = yield* store.beginAttempt(
       job.deliveryId,
       job.dispatchGeneration
     )
+    if (claimed.status !== "in-progress" || claimed.claimId === undefined) {
+      return
+    }
     const claimId = claimed.claimId
+    if (blocked.length > 0) {
+      yield* store.recordFailed(
+        job.deliveryId,
+        job.dispatchGeneration,
+        new RecipientSuppressed({
+          message: `recipient is suppressed: ${blocked.join(", ")}`,
+          recipients: blocked
+        }),
+        claimId
+      )
+      return
+    }
     yield* Metric.update(Metrics.attempts, 1)
     const result = yield* Effect.result(
       email.send(intent.message, {
         deliveryId: intent.deliveryId,
         ...(intent.route === undefined ? {} : { route: intent.route }),
+        ...(intent.rawEnvelope === undefined
+          ? {}
+          : { rawEnvelope: intent.rawEnvelope }),
         providerIdempotencyKey: intent.providerIdempotencyKey
       })
     )
@@ -433,7 +469,7 @@ export const processSubmission = (
     const error = result.failure
     const certainty = certaintyOf(error)
     const decision = decideRetry(error, {
-      attemptsMade: metadata.attempts,
+      attemptsMade: claimed.attempts,
       maxAttempts: options.maxAttempts ?? 10,
       defaultDelayMillis: 1_000
     })
@@ -451,11 +487,12 @@ export const processSubmission = (
 
     if (decision.action === "retry") {
       yield* Metric.update(Metrics.retries, 1)
+      const backoff = yield* retryDelayMillis(claimed.attempts, options.retrySchedule)
       yield* store.recordDeferred(
         job.deliveryId,
         job.dispatchGeneration,
         error,
-        decision.delayMillis ?? 1_000,
+        Math.max(decision.delayMillis ?? 1_000, backoff),
         claimId
       )
       return yield* error
@@ -516,10 +553,6 @@ export const reconcileStale = (
         ...(after === undefined ? {} : { after })
       })
       for (const intent of stale) {
-        const events = yield* store.listEvents(intent.deliveryId)
-        if (events.length > 0) {
-          continue
-        }
         yield* store.recordUncertain(
           intent.deliveryId,
           intent.dispatchGeneration,
@@ -527,7 +560,8 @@ export const reconcileStale = (
             message:
               "submission remained in-progress past the reconciliation cutoff",
             provider: "submission-worker"
-          })
+          }),
+          intent.claimId
         )
         reconciled.push(intent.deliveryId)
       }
@@ -555,8 +589,9 @@ export const deliveryStatusEvent = (
     return Option.none()
   }
   return Option.some({
-    id: `reconciled_${intent.deliveryId}_${status.state}`,
+    id: `reconciled_${intent.deliveryId}_${intent.dispatchGeneration}_${status.state}`,
     deliveryId: intent.deliveryId,
+    dispatchGeneration: intent.dispatchGeneration,
     provider: status.provider,
     providerMessageId: status.providerMessageId,
     type,
@@ -586,9 +621,6 @@ export const reconcileUncertain = (
         ...(after === undefined ? {} : { after })
       })
       for (const intent of page) {
-        if (intent.receipt === undefined) {
-          continue
-        }
         const result = yield* Effect.result(
           options.lookup(intent)
         )
@@ -602,10 +634,16 @@ export const reconcileUncertain = (
         if (Option.isSome(result.success)) {
           const inserted = yield* store.appendProviderEvent({
             ...result.success.value,
-            deliveryId: intent.deliveryId
+            deliveryId: intent.deliveryId,
+            dispatchGeneration: intent.dispatchGeneration
           })
           if (inserted) {
-            reconciled.push(intent.deliveryId)
+            const current = yield* store.get(intent.deliveryId)
+            if (Option.isSome(current) &&
+              current.value.dispatchGeneration === intent.dispatchGeneration &&
+              current.value.status !== "uncertain") {
+              reconciled.push(intent.deliveryId)
+            }
           }
         }
       }
@@ -635,6 +673,7 @@ export const runReconciler = (options: {
 
 export interface WorkerOptions extends SubmissionQueueOptions {
   readonly concurrency?: number
+  readonly queue?: PersistedQueue.PersistedQueue<SubmissionJob>
 }
 
 export const runWorker = (
@@ -647,13 +686,40 @@ export const runWorker = (
   | PersistedQueue.PersistedQueueFactory
 > =>
   Effect.gen(function* () {
-    const queue = yield* make(options)
+    const queue = options.queue ?? (yield* make(options))
+    const configured = queueOptions in queue ? (queue as ConfiguredQueue)[queueOptions] : {}
+    const maxAttempts = options.maxAttempts ?? configured.maxAttempts ?? 10
+    const retrySchedule = options.retrySchedule ?? configured.retrySchedule
+    const store = yield* DeliveryStore
     const concurrency = Math.max(1, options.concurrency ?? 1)
     const loop = queue
       .take((job, metadata) =>
         processSubmission(job, metadata, {
-          maxAttempts: options.maxAttempts ?? 10
-        })
+          maxAttempts,
+          ...(retrySchedule === undefined ? {} : { retrySchedule })
+        }).pipe(
+          Effect.catch((error) => Effect.gen(function* () {
+            const current = yield* store.get(job.deliveryId)
+            if (
+              Option.isSome(current) &&
+              current.value.dispatchGeneration === job.dispatchGeneration &&
+              current.value.status === "pending" &&
+              !current.value.cancellationRequested &&
+              current.value.nextAttemptAt !== undefined
+            ) {
+              const now = yield* Clock.currentTimeMillis
+              // Offer before acknowledging the current job. The retry ordinal
+              // deduplicates replay if the worker crashes after this offer.
+              yield* offer(queue, { ...job, retry: (job.retry ?? 0) + 1 }, {
+                delayMillis: Math.max(
+                  0, DateTime.toEpochMillis(current.value.nextAttemptAt) - now
+                )
+              })
+              return
+            }
+            return yield* error
+          }))
+        )
       )
       .pipe(
         Effect.catchTag("PersistedQueueError", () =>

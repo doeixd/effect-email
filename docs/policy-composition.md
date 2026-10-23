@@ -1,7 +1,6 @@
 # Policy composition
 
-Date: 2026-10-22
-Baseline: `38f452a` plus PR 3
+Updated for 0.3.0.
 
 Policies wrap `Transport` values. They must preserve the operations they claim
 and must not turn an uncertain submission into a duplicate send.
@@ -14,7 +13,7 @@ and must not turn an uncertain submission into a duplicate send.
 | `withRateLimit` | Charges one request, one message, and recipients | Splits into charged chunks and preserves original indexes | Forwards | Preserves native batching when the wrapped transport supports it |
 | `withCircuitBreaker` | One circuit observation per attempt | One observation per batch request; non-native fallback runs per message | Forwards | Preserves native batching when supported |
 | `withFallback` | Revalidates the secondary before dispatch | Fails over only safe, non-accepted slots; revalidates each secondary target | Routes by receipt destination/account | Exposes batching when the primary does |
-| `withRoundRobin` | Selects an eligible target per send | Uses the selected target for the batch | Routes by receipt destination | Sets `nativeBatch: false` because routing is per logical send |
+| `withRoundRobin` | Selects a target per send | Uses per-message dispatch | Routes by receipt destination | Sets `nativeBatch: false` because routing is per logical send |
 | `withTee` | Primary plus mirrors | Explicit multiple results | Primary receipt routing | Sets `nativeBatch: false` because mirroring changes the contract |
 
 ## Native batch retry
@@ -59,7 +58,8 @@ secondary remains routed to the secondary for retrieval and cancellation.
 ### Rate limit each physical attempt
 
 ```ts
-const transport = withRateLimit(policy)(withRetry(retryPolicy)(primary))
+const limited = yield* withRateLimit(policy)(primary)
+const transport = withRetry(retryPolicy)(limited)
 ```
 
 Each retry consumes another request token. Use this when provider quota is
@@ -68,7 +68,7 @@ charged per HTTP request.
 ### Rate limit one logical send
 
 ```ts
-const transport = withRetry(retryPolicy)(withRateLimit(policy)(primary))
+const transport = yield* withRateLimit(policy)(withRetry(retryPolicy)(primary))
 ```
 
 Internal retries do not consume the outer limiter. Provider quota is still
@@ -80,11 +80,16 @@ charged per physical attempt, so document that mismatch explicitly.
 
 - one request per physical batch or single send;
 - one message per envelope;
-- one recipient per address in `to`, `cc`, and `bcc`.
+- one recipient per SMTP envelope recipient when an explicit envelope is supplied,
+  otherwise per address in `to`, `cc`, and `bcc`.
 
 A native batch is charged by request, message, and recipient. A non-native batch
 is split into chunks and charged per chunk. Original indexes are restored after
 chunking.
+
+Completed chunks retain their indexed outcomes when a later chunk fails or
+exceeds a quota. Missing or duplicate indexes become uncertain. Subsequent
+retries and fallback cannot replay the accepted prefix.
 
 ## Fallback rules
 
@@ -92,6 +97,8 @@ chunking.
 - Never fail over `DeliveryUncertain` or `MalformedProviderResponse`.
 - Revalidate the secondary transport's capabilities before dispatch.
 - A same-provider second account is a different destination for receipt routing.
+- Native outcomes are matched by their declared indexes on both fallback legs,
+  including when a provider returns them out of order.
 - Composite batch and recipient limits use the smaller limit of the two legs so
   a failed subset cannot exceed the secondary's contract.
 
@@ -105,6 +112,8 @@ Do not send receipt operations to the primary by default.
 
 - One circuit observation is recorded per physical request.
 - A native batch counts as one request-level observation.
+- Retryable per-message failures in a native batch count as an unhealthy
+  observation; a successfully decoded outcome array alone is not success.
 - A non-native batch records one observation per message.
 - A half-open probe is released if the request is interrupted, so a later caller
   can probe instead of being blocked permanently.

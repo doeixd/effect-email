@@ -203,7 +203,8 @@ export const withRetry =
           }
 
           const byLocalIndex = new Map(
-            result.success.map((outcome) => [outcome.index, outcome])
+            normalizeOutcomes(pending.map((slot) => slot.envelope), result.success)
+              .map((outcome) => [outcome.index, outcome])
           )
           const retrySlots: typeof pending = []
           const retryDelays: Array<number> = []
@@ -311,6 +312,28 @@ const failureOutcome = (index: number, error: EmailError): MessageOutcome =>
     ? { _tag: "uncertain", index, error }
     : { _tag: "rejected", index, error }
 
+const normalizeOutcomes = (
+  envelopes: ReadonlyArray<PreparedEnvelope>,
+  outcomes: ReadonlyArray<MessageOutcome>
+): ReadonlyArray<MessageOutcome> => {
+  const indexed = new Map<number, MessageOutcome>()
+  const duplicates = new Set<number>()
+  for (const outcome of outcomes) {
+    if (!Number.isInteger(outcome.index) || outcome.index < 0 || outcome.index >= envelopes.length) continue
+    if (indexed.has(outcome.index)) duplicates.add(outcome.index)
+    indexed.set(outcome.index, outcome)
+  }
+  return envelopes.map((envelope, index) => {
+    const outcome = indexed.get(index)
+    return outcome !== undefined && !duplicates.has(index) ? outcome : failureOutcome(index,
+      DeliveryUncertain.new({
+        message: "provider batch response omitted or duplicated this message",
+        provider: envelope.destination.provider
+      })
+    )
+  })
+}
+
 const runOutcomes = (
   transport: Transport,
   envelopes: ReadonlyArray<PreparedEnvelope>
@@ -322,7 +345,7 @@ const runOutcomes = (
           ? envelopes.map((_, index) =>
               failureOutcome(index, result.failure)
             )
-          : result.success
+          : normalizeOutcomes(envelopes, result.success)
       )
     )
   }
@@ -363,9 +386,9 @@ const recipientCount = (
   envelopes.reduce(
     (total, envelope) =>
       total +
-      envelope.message.to.length +
-      envelope.message.cc.length +
-      envelope.message.bcc.length,
+      (envelope.rawEnvelope?.rcptTo.length ?? (
+        envelope.message.to.length + envelope.message.cc.length + envelope.message.bcc.length
+      )),
     0
   )
 
@@ -492,9 +515,9 @@ export const withRateLimit =
           const outcomes: Array<MessageOutcome> = []
           let offset = 0
           for (const chunk of splitForRateLimit(envelopes, policy)) {
-            yield* acquire(chunk)
-            const result = isNativeBatchTransport(transport)
-              ? yield* transport.sendBatch(chunk)
+            const acquired = yield* Effect.result(acquire(chunk))
+            const result = acquired._tag === "Failure"
+              ? chunk.map((_, index) => failureOutcome(index, acquired.failure))
               : yield* runOutcomes(transport, chunk)
             for (const outcome of result) {
               outcomes.push({
@@ -663,7 +686,8 @@ export const withCircuitBreaker =
       )
 
       const run = <A>(
-        operation: Effect.Effect<A, TransportError>
+        operation: Effect.Effect<A, TransportError>,
+        healthy: (value: A) => boolean = () => true
       ): Effect.Effect<A, TransportError> =>
         Effect.gen(function* () {
           yield* acquire
@@ -671,7 +695,7 @@ export const withCircuitBreaker =
             Effect.ensuring(releaseProbe)
           )
           if (result._tag === "Success") {
-            yield* record(true)
+            yield* record(healthy(result.success))
             return result.success
           }
           yield* record(!failureWhen(result.failure))
@@ -698,7 +722,9 @@ export const withCircuitBreaker =
             }
             return outcomes
           }
-          return yield* run(transport.sendBatch(envelopes))
+          return yield* run(transport.sendBatch(envelopes), (outcomes) =>
+            !outcomes.some((outcome) => outcome._tag !== "accepted" && failureWhen(outcome.error as TransportError))
+          )
         }
       )
 
@@ -735,7 +761,7 @@ export const withFallback =
         return yield* first.failure
       }
       const routed = reroute(envelope, secondary)
-      yield* checkCapabilities(secondary, routed.message)
+      yield* checkCapabilities(secondary, routed.message, routed.rawEnvelope)
       options.onFailover?.(primary, secondary, first.failure)
       return yield* secondary.send(routed)
     })
@@ -762,7 +788,7 @@ export const withFallback =
         for (const index of pending) {
           const routed = reroute(envelopes[index]!, secondary)
           const checked = yield* Effect.result(
-            checkCapabilities(secondary, routed.message)
+            checkCapabilities(secondary, routed.message, routed.rawEnvelope)
           )
           if (checked._tag === "Failure") {
             merged[index] = failureOutcome(index, checked.failure)
@@ -882,6 +908,9 @@ const mirrorEnvelope = (
   const recipient = normalizeMailbox(mirrorTo)
   return {
     ...routed,
+    ...(envelope.rawEnvelope === undefined
+      ? {}
+      : { rawEnvelope: { ...envelope.rawEnvelope, rcptTo: [recipient.address] } }),
     message: {
       ...envelope.message,
       to: [recipient],

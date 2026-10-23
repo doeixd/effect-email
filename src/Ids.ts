@@ -1,6 +1,9 @@
 import { Schema } from "effect"
 
 export const DeliveryId = Schema.NonEmptyString.pipe(
+  Schema.check(Schema.makeFilter((value: string) =>
+    !/[\r\n\0]/.test(value) || "delivery id must not contain line breaks or NUL bytes"
+  )),
   Schema.brand("DeliveryId")
 )
 export type DeliveryId = typeof DeliveryId.Type

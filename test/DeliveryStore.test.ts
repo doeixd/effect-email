@@ -284,6 +284,7 @@ describe("DeliveryStore", () => {
       yield* store.appendProviderEvent({
         id: "evt_after_redrive",
         deliveryId: id,
+        dispatchGeneration: 2,
         type: "delivered",
         occurredAt: DateTime.makeUnsafe(new Date(1_000))
       })

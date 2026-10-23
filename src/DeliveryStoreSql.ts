@@ -10,6 +10,8 @@ import type { SqlError } from "effect/sql/SqlError"
 import type {
   DeliveryEvent,
   DeliveryIntent,
+  DeliveryStoreShape,
+  DeliveryEventWait,
   DeliveryStatus
 } from "./DeliveryStore"
 import { newDeliveryId } from "./Ids"
@@ -24,6 +26,9 @@ export interface DeliveryStoreSqlOptions {
 
 const BYTES = "__effect_email_bytes__"
 const DATETIME = "__effect_email_datetime__"
+// These schema fields contain arbitrary JSON, never encoded runtime values.
+// Keep them opaque, including when reading rows written by older releases.
+const JSON_FIELDS = new Set(["payload", "props", "variables", "metadata"])
 
 const encode = (value: unknown): unknown => {
   if (value instanceof Uint8Array) {
@@ -37,7 +42,7 @@ const encode = (value: unknown): unknown => {
   }
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, encode(entry)])
+      Object.entries(value).map(([key, entry]) => [key, JSON_FIELDS.has(key) ? entry : encode(entry)])
     )
   }
   return value
@@ -59,7 +64,7 @@ const decode = (value: unknown): unknown => {
       return DateTime.makeUnsafe(new Date(record[DATETIME]))
     }
     return Object.fromEntries(
-      Object.entries(record).map(([key, entry]) => [key, decode(entry)])
+      Object.entries(record).map(([key, entry]) => [key, JSON_FIELDS.has(key) ? entry : decode(entry)])
     )
   }
   return value
@@ -87,6 +92,7 @@ export const layerSql = (
       const intents = `${prefix}_intents`
       const events = `${prefix}_events`
       const cancellations = `${prefix}_cancellations`
+      const waits = `${prefix}_event_waits`
 
       yield* sql`CREATE TABLE IF NOT EXISTS ${sql(
         intents
@@ -97,6 +103,8 @@ export const layerSql = (
       yield* sql`CREATE TABLE IF NOT EXISTS ${sql(
         cancellations
       )} (delivery_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)`
+      yield* sql`CREATE TABLE IF NOT EXISTS ${sql(waits)} (execution_id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL, data TEXT NOT NULL)`
+      yield* sql`CREATE INDEX IF NOT EXISTS ${sql(`${waits}_delivery`)} ON ${sql(waits)} (delivery_id)`
       yield* sql`CREATE INDEX IF NOT EXISTS ${sql(
         `${intents}_status`
       )} ON ${sql(intents)} (status)`
@@ -236,6 +244,36 @@ export const layerSql = (
             )} WHERE delivery_id = ${deliveryId} WITH (UPDLOCK, ROWLOCK)`
         })
 
+      // Row locks cannot serialize creation/cancellation before an intent exists.
+      // PG lifecycle mutations take this transaction-scoped lock first.
+      const lockDelivery = (deliveryId: string) => sql.onDialectOrElse({
+        pg: () => sql`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([prefix, deliveryId])}, 0))`.pipe(Effect.asVoid),
+        orElse: () => Effect.void
+      })
+
+      const findByProviderMessageId: DeliveryStoreShape["findByProviderMessageId"] =
+        (providerMessageId, options = {}) =>
+          sql<{ readonly data: string }>`SELECT data FROM ${sql(
+            intents
+          )} WHERE provider_message_id = ${providerMessageId} ORDER BY updated_at DESC`.pipe(
+            Effect.map((rows) => {
+              for (const row of rows) {
+                const intent = decode(JSON.parse(row.data)) as DeliveryIntent
+                if ((options.provider === undefined || intent.receipt?.provider === options.provider) &&
+                  (options.destinationId === undefined || intent.receipt?.destinationId === options.destinationId)) {
+                  return Option.some(intent)
+                }
+              }
+              return Option.none()
+            }),
+            Effect.mapError(normalizeError)
+          )
+
+      const registerEventWait: DeliveryStoreShape["registerEventWait"] = (wait) =>
+        sql`INSERT INTO ${sql(waits)} (execution_id, delivery_id, data) VALUES (${wait.executionId}, ${wait.deliveryId}, ${JSON.stringify(wait)}) ON CONFLICT(execution_id) DO NOTHING`.pipe(
+          Effect.asVoid, Effect.mapError(normalizeError)
+        )
+
       const runTransition = (
         deliveryId: DeliveryId,
         change: Transitions.IntentTransition,
@@ -244,6 +282,7 @@ export const layerSql = (
         sql
           .withTransaction(
             Effect.gen(function* () {
+              yield* lockDelivery(deliveryId)
               const rows = yield* selectIntent(deliveryId)
               if (rows[0] === undefined) {
                 return yield* Transitions.missingIntent(deliveryId)
@@ -272,6 +311,7 @@ export const layerSql = (
           return sql
             .withTransaction(
               Effect.gen(function* () {
+                yield* lockDelivery(deliveryId)
                 const rows = yield* selectIntent(deliveryId)
                 const existing =
                   rows[0] === undefined
@@ -407,6 +447,7 @@ export const layerSql = (
           sql
             .withTransaction(
               Effect.gen(function* () {
+                yield* lockDelivery(deliveryId)
                 const rows = yield* selectIntent(deliveryId)
                 const existing =
                   rows[0] === undefined
@@ -456,13 +497,7 @@ export const layerSql = (
         redrive: (deliveryId, options) =>
           runTransition(
             deliveryId,
-            (intent, now) =>
-              intent.status === "uncertain" &&
-              options?.acknowledgeDuplicateRisk !== true
-                ? StoreUnavailable.new({
-                    message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
-                  })
-                : Transitions.redrive(intent, now, options),
+            (intent, now) => Transitions.redrive(intent, now, options),
             true
           ),
         listUncertain: intentsByStatus("uncertain").pipe(
@@ -485,18 +520,7 @@ export const layerSql = (
           Effect.mapError(normalizeError)
         ),
         listAll: allIntents.pipe(Effect.mapError(normalizeError)),
-        findByProviderMessageId: (providerMessageId) =>
-          sql<{ readonly data: string }>`SELECT data FROM ${sql(
-            intents
-          )} WHERE provider_message_id = ${providerMessageId} ORDER BY updated_at DESC LIMIT 1`.pipe(
-            Effect.map((rows) =>
-              Option.map(
-                Option.fromNullishOr(rows[0]),
-                (row) => decode(JSON.parse(row.data)) as DeliveryIntent
-              )
-            ),
-            Effect.mapError(normalizeError)
-          ),
+        findByProviderMessageId,
         listAttempts: (deliveryId) =>
           sql<{ readonly data: string }>`SELECT data FROM ${sql(
             intents
@@ -622,15 +646,11 @@ export const layerSql = (
                   event.providerMessageId !== undefined &&
                   event.destinationId !== undefined
                 ) {
-                  const correlated = yield* sql<{
-                    readonly data: string
-                  }>`SELECT data FROM ${sql(
-                    intents
-                  )} WHERE provider_message_id = ${event.providerMessageId} ORDER BY updated_at DESC LIMIT 1`
-                  if (correlated[0] !== undefined) {
-                    const intent = decode(
-                      JSON.parse(correlated[0].data)
-                    ) as DeliveryIntent
+                  const correlated = yield* findByProviderMessageId(event.providerMessageId, {
+                    provider: event.provider, destinationId: event.destinationId
+                  })
+                  if (Option.isSome(correlated)) {
+                    const intent = correlated.value
                     if (Transitions.eventMatchesIntent(event, intent)) {
                       deliveryId = intent.deliveryId
                     }
@@ -643,6 +663,7 @@ export const layerSql = (
                 }
                 yield* saveEvent(storedEvent)
                 if (deliveryId !== undefined) {
+                  yield* lockDelivery(deliveryId)
                   const intentRows = yield* selectIntent(deliveryId)
                   if (intentRows[0] !== undefined) {
                     const intent = decode(
@@ -665,6 +686,10 @@ export const layerSql = (
               })
             )
             .pipe(Effect.mapError(normalizeError)),
+        getEvent: (id) => sql<{ readonly data: string }>`SELECT data FROM ${sql(events)} WHERE event_id = ${id}`.pipe(
+          Effect.map((rows) => Option.map(Option.fromNullishOr(rows[0]), (row) => decode(JSON.parse(row.data)) as DeliveryEvent)),
+          Effect.mapError(normalizeError)
+        ),
         listEvents: (deliveryId) =>
           (deliveryId === undefined
             ? allEvents
@@ -679,6 +704,14 @@ export const layerSql = (
                   )
               )
           ).pipe(Effect.mapError(normalizeError)),
+        registerEventWait,
+        removeEventWait: (executionId) => sql`DELETE FROM ${sql(waits)} WHERE execution_id = ${executionId}`.pipe(
+          Effect.asVoid, Effect.mapError(normalizeError)
+        ),
+        listEventWaits: (deliveryId) => sql<{ readonly data: string }>`SELECT data FROM ${sql(waits)} WHERE delivery_id = ${deliveryId}`.pipe(
+          Effect.map((rows) => rows.map((row) => JSON.parse(row.data) as DeliveryEventWait)),
+          Effect.mapError(normalizeError)
+        ),
         prune: (options) =>
           sql
             .withTransaction(
@@ -714,14 +747,16 @@ export const layerSql = (
           allEvents,
           sql<{ readonly delivery_id: string }>`SELECT delivery_id FROM ${sql(
             cancellations
-          )}`.pipe(Effect.mapError(normalizeError))
+          )}`.pipe(Effect.mapError(normalizeError)),
+          sql<{ readonly data: string }>`SELECT data FROM ${sql(waits)}`
         ]).pipe(
-          Effect.map(([storedIntents, storedEvents, storedCancellations]) => ({
+          Effect.map(([storedIntents, storedEvents, storedCancellations, storedWaits]) => ({
             intents: storedIntents,
             events: storedEvents,
             cancellations: storedCancellations.map(
               (row) => row.delivery_id as DeliveryId
-            )
+            ),
+            eventWaits: storedWaits.map((row) => JSON.parse(row.data) as DeliveryEventWait)
           })),
           Effect.mapError(normalizeError)
         ),
@@ -732,6 +767,7 @@ export const layerSql = (
                 yield* sql`DELETE FROM ${sql(intents)}`
                 yield* sql`DELETE FROM ${sql(events)}`
                 yield* sql`DELETE FROM ${sql(cancellations)}`
+                yield* sql`DELETE FROM ${sql(waits)}`
                 for (const intent of snapshot.intents) {
                   yield* saveIntent(intent)
                 }
@@ -741,6 +777,7 @@ export const layerSql = (
                 for (const deliveryId of snapshot.cancellations ?? []) {
                   yield* saveCancellation(deliveryId)
                 }
+                for (const wait of snapshot.eventWaits ?? []) yield* registerEventWait(wait)
               })
             )
             .pipe(Effect.mapError(normalizeError))

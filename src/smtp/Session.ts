@@ -165,7 +165,7 @@ export const runSession = <P = unknown>(
               lines: ["Line too long"]
             })
           )
-          continue
+          return
         }
         if (read.line === undefined) {
           break

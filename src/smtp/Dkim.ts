@@ -19,6 +19,7 @@ export interface DkimOptions {
 }
 
 const CRLF = "\r\n"
+const trimWsp = (value: string): string => value.replace(/^[ \t]+|[ \t]+$/g, "")
 
 const DEFAULT_HEADERS = [
   "from",
@@ -52,7 +53,7 @@ const parseHeaders = (mime: string): {
       if (current !== undefined) {
         current = {
           ...current,
-          value: current.value + " " + line.trim()
+          value: current.value + " " + trimWsp(line)
         }
       }
       continue
@@ -62,7 +63,7 @@ const parseHeaders = (mime: string): {
     if (current !== undefined) headers.push(current)
     current = {
       name: line.slice(0, colon).trim(),
-      value: line.slice(colon + 1).trim()
+      value: trimWsp(line.slice(colon + 1))
     }
   }
   if (current !== undefined) headers.push(current)
@@ -70,22 +71,19 @@ const parseHeaders = (mime: string): {
 }
 
 const canonicalHeader = (name: string, value: string): string =>
-  `${name.trim().toLowerCase()}:${value
+  `${name.trim().toLowerCase()}:${trimWsp(value
     .replace(/\r?\n[ \t]+/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .trim()}`
+    .replace(/[ \t]+/g, " "))}`
 
 const canonicalBody = (body: string): string => {
   const normalized = body.replace(/\r?\n/g, CRLF)
-  const lines = normalized.split(CRLF)
+  const lines = normalized.split(CRLF).map((line) =>
+    line.replace(/[ \t]+/g, " ").replace(/[ \t]+$/g, "")
+  )
   while (lines.length > 0 && lines[lines.length - 1] === "") {
     lines.pop()
   }
-  const value = lines
-    .map((line) =>
-      line.replace(/[ \t]+/g, " ").replace(/[ \t]+$/g, "")
-    )
-    .join(CRLF)
+  const value = lines.join(CRLF)
   return value.length === 0 ? "" : value + CRLF
 }
 
@@ -95,19 +93,34 @@ export const sign = (
 ): Effect.Effect<Uint8Array, DkimSigningError> =>
   Effect.try({
     try: () => {
-      const text = new TextDecoder().decode(mime)
+      // Canonicalization operates on octets; decoding arbitrary MIME as UTF-8
+      // would replace non-UTF-8 bytes and change the message being signed.
+      const text = Buffer.from(mime).toString("latin1")
       const parsed = parseHeaders(text)
       const names = (options.headers ?? DEFAULT_HEADERS).map((name) =>
         name.toLowerCase()
       )
-      const selected = names.flatMap((name) => {
-        const header = parsed.headers.find(
-          (candidate) => candidate.name.toLowerCase() === name
-        )
-        return header === undefined ? [] : [header]
-      })
+      if (!/^[A-Za-z0-9.-]+$/.test(options.domain) ||
+        !/^[A-Za-z0-9._-]+$/.test(options.selector)) {
+        throw new Error("invalid DKIM domain or selector")
+      }
+      const used = new Set<number>()
+      const selected: Array<ParsedHeader> = []
+      for (const name of names) {
+        for (let index = parsed.headers.length - 1; index >= 0; index--) {
+          const header = parsed.headers[index]!
+          if (!used.has(index) && header.name.toLowerCase() === name) {
+            used.add(index)
+            selected.push(header)
+            break
+          }
+        }
+      }
+      if (!selected.some((header) => header.name.toLowerCase() === "from")) {
+        throw new Error("DKIM signatures must sign the From header")
+      }
       const bodyHash = createHash("sha256")
-        .update(canonicalBody(parsed.body))
+        .update(canonicalBody(parsed.body), "latin1")
         .digest("base64")
       const timestamp =
         options.timestamp ?? Math.floor(Date.now() / 1000)
@@ -128,19 +141,18 @@ export const sign = (
         "b="
       ].join("; ")
       const signingInput =
-        canonicalHeader("DKIM-Signature", signatureHeaderBase) +
-        CRLF +
         selected
           .map(
             (header) =>
               canonicalHeader(header.name, header.value) + CRLF
           )
-          .join("")
+          .join("") +
+        canonicalHeader("DKIM-Signature", signatureHeaderBase)
       const signature = createSign("RSA-SHA256")
-        .update(signingInput)
+        .update(signingInput, "latin1")
         .sign(options.privateKey, "base64")
       const header = `DKIM-Signature: ${signatureHeaderBase}${signature}${CRLF}`
-      return new TextEncoder().encode(header + text)
+      return new Uint8Array(Buffer.concat([Buffer.from(header, "ascii"), mime]))
     },
     catch: (cause) =>
       new DkimSigningError({

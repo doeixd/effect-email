@@ -1,7 +1,7 @@
 # Delivery baseline inventory
 
-Date: 2026-10-22
-Baseline: `1b8f168` (0.4.0)
+Date: 2026-10-23
+Baseline: 0.3.0 release candidate (supersedes development snapshot `1b8f168`)
 Roadmap: `docs/service-improvement-plan.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 
@@ -11,9 +11,9 @@ architecture. It is the reference point for the service improvement roadmap.
 ## Verification
 
 - `bun run typecheck`: pass.
-- `bun run check`: pass, 305 tests across 60 files.
-- PostgreSQL integration: pass against PostgreSQL 17 with two tests covering
-  transactional rollback and concurrent delivery isolation.
+- Release qualification: 369 tests passed across 65 files, with no skips, on
+  Node 22.23.1 and PostgreSQL 16. See the [release checklist](./release.md).
+- Effect diagnostics: zero errors and warnings; two informational suggestions.
 - `bun run smoke`: pass against the built package.
 - Package entry-point guard: pass; the root entrypoint exports core modules
   only and does not load providers, Node adapters, or server modules.
@@ -91,8 +91,8 @@ pending -> canceled
 - `dispatchGeneration` guards stale queue work and stale attempt completions.
 - `claimId` and `claimExpiresAt` guard active attempts. A second worker cannot
   claim an in-progress delivery, and a stale claim cannot record an outcome.
-- An expired claim requires reconciliation or explicit redrive; lease expiry does
-  not authorize an automatic resend.
+- An expired claim requires reconciliation before redrive; an in-progress intent
+  rejects redrive. Lease expiry does not authorize an automatic resend.
 
 Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissions.ts`.
 
@@ -153,14 +153,14 @@ Sources: `src/DeliveryStore.ts`, `src/DeliveryStoreSql.ts`, `src/queue/Submissio
 | Gap | Current evidence | Consequence |
 | --- | --- | --- |
 | Tenant identity is stored but not required for lookup | `DeliveryIntent.tenantId`, `tenant_id` column | A caller can still address a delivery without tenant scoping |
-| Typed event completion is caller-scoped | `workflow/Submissions.ts` | A typed wait must be completed with the same type/purpose scope |
+| Event subscriptions require workflow-engine context | `workflow/Submissions.ts`, gateway | The gateway wakes matching stored subscriptions only when its workflow engine is provided |
 | Suppression discovery is optional | Admission and worker use `serviceOption` | A production assembly can accidentally omit enforcement |
 | Bounce suppression is policy-gated | Complaints suppress automatically; bounces require `suppressOnEvents` | Soft bounces are not suppressed by default |
 | Development catcher still uses `listAll` | `server/Catcher.ts` is development-only | Not suitable as a production listing endpoint |
 | Provider lookup is caller-supplied | `reconcileUncertain` accepts a lookup function | No universal provider-status mapping or automatic schedule |
 | No live provider sandbox suite | Contract tests use local fixtures | Sandbox parity remains release hardening |
 | Registry routes are assembly-time | `Email.layerFromRegistry` | Route changes require rebuilding the layer |
-| Storage schema is intent-oriented | migrations `0001`-`0007` | Attempt history is embedded JSON; normalized attempt and recipient outcomes remain future work |
+| Storage schema is intent-oriented | migrations `0001`-`0008` | Attempt history is embedded JSON; wait subscriptions have a separate table; normalized attempt and recipient outcomes remain future work |
 | No provider advertises partial batch retry yet | `partialBatchRetry` defaults to false | The safe subset-retry path is available to custom transports but is not used by shipped adapters |
 | Remote attachment snapshots are not content-addressed | URL attachments remain mutable references | Durable replay can observe changed remote content |
 | Legacy `Email.layer` still throws | `Email.layerValidated` provides typed failures | Prefer `layerValidated` for production assembly |

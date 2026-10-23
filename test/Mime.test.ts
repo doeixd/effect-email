@@ -20,6 +20,19 @@ const baseMessage = {
 } as const
 
 describe("SMTP MIME builder", () => {
+  it.effect("escapes legacy delivery ids and rejects message-id header injection", () =>
+    Effect.gen(function* () {
+      const prepared = yield* prepare(baseMessage)
+      const malicious = "safe>\r\nBcc: injected@example.com"
+      const mime = new TextDecoder().decode(yield* buildMime({
+        ...prepared, deliveryId: malicious as import("../src/Ids").DeliveryId
+      }))
+      assert.notInclude(mime, "\r\nBcc:")
+      assert.include(mime, encodeURIComponent(malicious))
+      const custom = yield* Effect.result(buildMime(prepared, { messageId: malicious }))
+      assert.strictEqual(custom._tag === "Failure" && custom.failure._tag, "UnsupportedCapability")
+    }))
+
   it.effect("builds headers and multipart bodies", () =>
     Effect.gen(function* () {
       const message = yield* prepare(baseMessage)

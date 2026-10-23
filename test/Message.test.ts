@@ -4,6 +4,21 @@ import { deliveryId } from "../src/Ids"
 import * as Message from "../src/Message"
 
 describe("Message", () => {
+  it.effect("rejects delivery ids containing header breaks", () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.result(Message.decode({
+        to: "recipient@example.com", subject: "Test", text: "Body",
+        deliveryId: "safe>\r\nBcc: injected@example.com"
+      }))
+      assert.strictEqual(result._tag === "Failure" && result.failure._tag, "InvalidMessage")
+      const draft = Message.make({ to: "recipient@example.com", subject: "Test", text: "Body" })
+      const defaults = yield* Effect.result(Message.prepare(draft, {
+        from: "sender@example.com",
+        deliveryId: "bad\nheader" as import("../src/Ids").DeliveryId
+      }))
+      assert.strictEqual(defaults._tag === "Failure" && defaults.failure._tag, "InvalidMessage")
+    }))
+
   it.effect("normalizes mailboxes deterministically", () =>
     Effect.sync(() => {
       const draft = Message.make({

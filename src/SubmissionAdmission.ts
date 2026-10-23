@@ -111,9 +111,11 @@ export interface SubmissionAdmissionShape {
   readonly appendProviderEvent: (
     event: DeliveryEvent
   ) => Effect.Effect<boolean, StoreUnavailable>
+  readonly getEvent: import("./DeliveryStore").DeliveryStoreShape["getEvent"]
   readonly listEvents: (
     deliveryId: DeliveryId
   ) => Effect.Effect<ReadonlyArray<DeliveryEvent>, StoreUnavailable>
+  readonly listEventWaits: import("./DeliveryStore").DeliveryStoreShape["listEventWaits"]
 }
 
 export class SubmissionAdmission extends Context.Service<
@@ -370,8 +372,12 @@ export const make = (
       Effect.fn("SubmissionAdmission.appendProviderEvent")(
         function* (event) {
           const inserted = yield* store.appendProviderEvent(event)
+          const canonical = yield* store.getEvent(event.id)
+          if (Option.isNone(canonical)) {
+            return yield* StoreUnavailable.new({ message: "stored provider event is unavailable" })
+          }
+          event = canonical.value
           if (
-            !inserted ||
             Option.isNone(suppressionStore) ||
             !(options.suppressOnEvents ?? ["complained"]).includes(
               event.type as "bounced" | "complained"
@@ -382,8 +388,10 @@ export const make = (
           const stored = yield* (
             event.deliveryId !== undefined
               ? store.get(event.deliveryId)
-              : event.providerMessageId !== undefined
-                ? store.findByProviderMessageId(event.providerMessageId)
+              : event.providerMessageId !== undefined && event.destinationId !== undefined
+                ? store.findByProviderMessageId(event.providerMessageId, {
+                    provider: event.provider, destinationId: event.destinationId
+                  })
                 : Effect.succeed(Option.none())
           )
           if (
@@ -406,14 +414,7 @@ export const make = (
               tenantId: stored.value.tenantId,
               recipient,
               reason
-            }).pipe(
-              Effect.catchTag("StoreUnavailable", (cause) =>
-                Effect.logWarning(
-                  "provider event suppression failed",
-                  cause
-                )
-              )
-            )
+            })
           }
           return inserted
         }
@@ -436,7 +437,9 @@ export const make = (
       statusSummary: store.statusSummary,
       listForTenant: store.listForTenant,
       appendProviderEvent,
-      listEvents: store.listEvents
+      getEvent: store.getEvent,
+      listEvents: store.listEvents,
+      listEventWaits: store.listEventWaits
     }
   })
 

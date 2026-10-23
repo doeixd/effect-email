@@ -1,11 +1,12 @@
-import { Context, Effect, Layer, Result, Stream } from "effect"
+import { Context, Effect, Layer, Result, Semaphore, Stream } from "effect"
 import type { DeliveryId, RouteName } from "./Ids"
-import { destinationId, newDeliveryId, routeName } from "./Ids"
+import { deliveryId, destinationId, newDeliveryId, routeName } from "./Ids"
 import type { EmailError } from "./EmailError"
 import {
   certaintyOf,
   ConfigurationError,
   DeliveryUncertain,
+  InvalidMessage,
   UnsupportedCapability
 } from "./EmailError"
 import type {
@@ -34,6 +35,8 @@ export interface SendOptions {
   readonly route?: RouteName
   readonly deliveryId?: DeliveryId
   readonly providerIdempotencyKey?: string
+  /** SMTP envelope addresses, independent of the message headers. */
+  readonly rawEnvelope?: import("./DeliveryStore").RawEnvelope
 }
 
 export interface BatchOptions {
@@ -239,7 +242,16 @@ const makeEmailShape = (
   return {
     send,
     sendBatch,
-    sendStream: makeSendStream(sendBatch),
+    sendStream: makeSendStream((semaphore) =>
+      makeSendBatch(
+        from,
+        defaultRoute,
+        new Map([...routes].map(([name, transport]) =>
+          [name, limitTransport(transport, semaphore)] as const
+        )),
+        renderer
+      )
+    ),
     retrieve: makeRetrieve(routes),
     cancel: makeCancel(routes)
   }
@@ -392,8 +404,6 @@ const makeSend = (
     })
     const message = yield* renderIfNeeded(prepared, renderer)
 
-    yield* checkCapabilities(transport, message)
-
     yield* Effect.annotateCurrentSpan({
       route: selectedRoute,
       provider: transport.destination.provider,
@@ -406,7 +416,38 @@ const makeSend = (
       transport,
       options.providerIdempotencyKey
     )
-    const receipt = yield* transport.send(envelope)
+    const rawEnvelope = yield* Effect.try({
+      try: () => {
+        if (options.rawEnvelope === undefined) {
+          return undefined
+        }
+        if (options.rawEnvelope.rcptTo.length === 0) {
+          throw new InvalidMessage({
+            message: "at least one envelope recipient is required"
+          })
+        }
+        return {
+          mailFrom:
+            options.rawEnvelope.mailFrom === null
+              ? null
+              : normalizeMailbox(options.rawEnvelope.mailFrom).address,
+          rcptTo: options.rawEnvelope.rcptTo.map(
+            (address) => normalizeMailbox(address).address
+          )
+        }
+      },
+      catch: (cause) =>
+        cause instanceof InvalidMessage
+          ? cause
+          : new InvalidMessage({
+              message: "invalid SMTP envelope",
+              issues: String(cause)
+            })
+    })
+    yield* checkCapabilities(transport, message, rawEnvelope)
+    const receipt = yield* transport.send(
+      rawEnvelope === undefined ? envelope : { ...envelope, rawEnvelope }
+    )
 
     return finalizeReceipt(receipt, envelope)
   })
@@ -437,7 +478,7 @@ const missingOutcome = (
   _tag: "uncertain",
   index,
   error: DeliveryUncertain.new({
-    message: "provider batch response omitted this message",
+    message: "provider batch response omitted or duplicated this message",
     provider
   })
 })
@@ -469,6 +510,7 @@ const executeNativeBatch = (
             )
           }
           const byOriginalIndex = new Map<number, MessageOutcome>()
+          const duplicates = new Set<number>()
           for (const outcome of result.success) {
             if (
               !Number.isInteger(outcome.index) ||
@@ -478,6 +520,9 @@ const executeNativeBatch = (
               continue
             }
             const slot = chunk[outcome.index]!
+            if (byOriginalIndex.has(slot.index)) {
+              duplicates.add(slot.index)
+            }
             if (!byOriginalIndex.has(slot.index)) {
               byOriginalIndex.set(
                 slot.index,
@@ -496,8 +541,10 @@ const executeNativeBatch = (
           }
           return chunk.map(
             (slot) =>
-              byOriginalIndex.get(slot.index) ??
-              missingOutcome(slot.index, transport.destination.provider)
+              duplicates.has(slot.index)
+                ? missingOutcome(slot.index, transport.destination.provider)
+                : byOriginalIndex.get(slot.index) ??
+                  missingOutcome(slot.index, transport.destination.provider)
           )
         })
       ),
@@ -530,12 +577,17 @@ const makeSendBatch = (
       })
     }
 
-    const perMessageKey = (deliveryId: string): string | undefined =>
+    const batchSeed = options.providerIdempotencyKey === undefined ? undefined :
+      yield* Effect.tryPromise({
+        try: async () => Array.from(new Uint8Array(await globalThis.crypto.subtle.digest(
+          "SHA-256", new TextEncoder().encode(options.providerIdempotencyKey!)
+        ))).map((byte) => byte.toString(16).padStart(2, "0")).join(""),
+        catch: () => new BatchExecutionError({ message: "could not derive stable batch identity" })
+      })
+    const perMessageKey = (index: number): string | undefined =>
       options.providerIdempotencyKey === undefined
         ? undefined
-        : isNativeBatchTransport(transport)
-          ? options.providerIdempotencyKey
-          : `${options.providerIdempotencyKey}:${deliveryId}`
+        : `${options.providerIdempotencyKey}:${index}`
 
     const slots = yield* Effect.forEach(
       inputs,
@@ -544,7 +596,7 @@ const makeSendBatch = (
           const prepared = yield* Effect.result(
             prepare(input, {
               from: defaultFrom,
-              deliveryId: newDeliveryId()
+              deliveryId: batchSeed === undefined ? newDeliveryId() : deliveryId(`dlv_batch_${batchSeed}_${index}`)
             })
           )
           if (Result.isFailure(prepared)) {
@@ -581,7 +633,7 @@ const makeSendBatch = (
               rendered.success,
               selectedRoute,
               transport,
-              perMessageKey(rendered.success.deliveryId!)
+              perMessageKey(index)
             )
           }
         })
@@ -631,8 +683,25 @@ const makeSendBatch = (
     )
   })
 
+const limitTransport = (
+  transport: Transport,
+  semaphore: Semaphore.Semaphore
+): Transport => {
+  const limited: Transport = {
+    ...transport,
+    send: (envelope) => semaphore.withPermits(1)(transport.send(envelope))
+  }
+  if (!isNativeBatchTransport(transport)) return limited
+  const native: NativeBatchTransport = {
+    ...limited,
+    capabilities: transport.capabilities,
+    sendBatch: (envelopes) => semaphore.withPermits(1)(transport.sendBatch(envelopes))
+  }
+  return native
+}
+
 const makeSendStream = (
-  sendBatch: EmailShape["sendBatch"]
+  makeBatch: (semaphore: Semaphore.Semaphore) => EmailShape["sendBatch"]
 ): EmailShape["sendStream"] =>
   (inputs, options = {}) => {
     const chunkSize = options.chunkSize ?? 32
@@ -651,21 +720,31 @@ const makeSendStream = (
         })
       )
     }
-    return inputs.pipe(
-      Stream.grouped(chunkSize),
-      Stream.mapEffect(
-        (chunk, chunkIndex) =>
-          sendBatch(chunk, options).pipe(
-            Effect.map((outcomes) =>
-              outcomes.map((outcome) => ({
-                ...outcome,
-                index: outcome.index + chunkIndex * chunkSize
-              }))
-            )
+    return Stream.unwrap(
+      Effect.map(Semaphore.make(concurrency), (semaphore) => {
+        const sendBatch = makeBatch(semaphore)
+        return inputs.pipe(
+          Stream.grouped(chunkSize),
+          Stream.mapEffect(
+            (chunk, chunkIndex) =>
+              sendBatch(chunk, {
+                ...options,
+                ...(options.providerIdempotencyKey === undefined ? {} : {
+                  providerIdempotencyKey: JSON.stringify([options.providerIdempotencyKey, "chunk", chunkIndex])
+                })
+              }).pipe(
+                Effect.map((outcomes) =>
+                  outcomes.map((outcome) => ({
+                    ...outcome,
+                    index: outcome.index + chunkIndex * chunkSize
+                  }))
+                )
+              ),
+            { concurrency }
           ),
-        { concurrency }
-      ),
-      Stream.flattenIterable
+          Stream.flattenIterable
+        )
+      })
     )
   }
 

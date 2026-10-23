@@ -5,6 +5,7 @@ import * as DeliveryStore from "../src/DeliveryStore"
 import * as Email from "../src/Email"
 import {
   InvalidMessage,
+  DeliveryUncertain,
   StoreUnavailable,
   TransportUnavailable,
   UnsupportedCapability
@@ -22,6 +23,7 @@ import * as Submissions from "../src/queue/Submissions"
 import * as Mock from "../src/providers/Mock"
 import * as Template from "../src/render/Template"
 import * as RecordingTransport from "../src/testing/RecordingTransport"
+import * as Suppression from "../src/Suppression"
 
 const tenant = tenantId("tenant_1")
 const delivery = deliveryId("dlv_queue_1")
@@ -44,6 +46,70 @@ const intentInput = {
 } as const
 
 describe("Submission queue", () => {
+  it.effect("does not send when canceled between the initial check and claim", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      yield* Effect.gen(function* () {
+        const store = yield* DeliveryStore.DeliveryStore
+        const suppression = yield* Suppression.SuppressionStore
+        yield* store.createIntent(intentInput)
+        yield* Submissions.processSubmission(job(), { id: "race", attempts: 1 }).pipe(
+          Effect.provideService(Suppression.SuppressionStore, {
+            ...suppression,
+            suppressed: () => Effect.gen(function* () {
+              assert.strictEqual(yield* store.requestCancellation(delivery), "canceled-before-dispatch")
+              return []
+            })
+          })
+        )
+        assert.strictEqual((yield* client.inbox.messages).length, 0)
+        const stored = yield* store.get(delivery)
+        assert.strictEqual(Option.isSome(stored) && stored.value.status, "canceled")
+      }).pipe(
+        Effect.provide(Layer.mergeAll(
+          DeliveryStore.layerMemory,
+          Suppression.layerMemory,
+          Email.layer({ defaultFrom: "billing@example.com", routes: { default: client.transport } })
+        ))
+      )
+    }))
+
+  it.effect("looks up receipt-less uncertainty and fences results against redrive", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      yield* store.createIntent(intentInput)
+      yield* store.beginAttempt(delivery, 1)
+      yield* store.recordUncertain(delivery, 1, DeliveryUncertain.new({ message: "connection lost" }))
+      let lookups = 0
+      const reconciled = yield* Submissions.reconcileUncertain({
+        lookup: (intent) => Effect.gen(function* () {
+          lookups++
+          assert.isUndefined(intent.receipt)
+          return Option.some({
+            id: "lookup-no-receipt", provider: "mock",
+            providerMessageId: providerMessageId("found-by-key"),
+            type: "delivered" as const, occurredAt: yield* DateTime.now
+          })
+        })
+      })
+      assert.strictEqual(lookups, 1)
+      assert.deepStrictEqual(reconciled, [delivery])
+      const delivered = yield* store.get(delivery)
+      assert.strictEqual(Option.isSome(delivered) && delivered.value.status, "delivered")
+      yield* store.redrive(delivery)
+      yield* store.beginAttempt(delivery, 2)
+      yield* store.recordUncertain(delivery, 2, TransportUnavailable.new({ message: "unknown" }))
+      const stale = yield* Submissions.reconcileUncertain({
+        lookup: () => Effect.gen(function* () {
+          yield* store.redrive(delivery, { acknowledgeDuplicateRisk: true })
+          return Option.some({ id: "stale-lookup", type: "delivered" as const, occurredAt: yield* DateTime.now })
+        })
+      })
+      assert.deepStrictEqual(stale, [])
+      const pending = yield* store.get(delivery)
+      assert.strictEqual(Option.isSome(pending) && pending.value.status, "pending")
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
+
   it.effect("derives collision-resistant queue ids", () =>
     Effect.sync(() => {
       assert.notStrictEqual(
@@ -189,7 +255,7 @@ describe("Submission queue", () => {
       assert.strictEqual((yield* client.inbox.messages).length, 0)
     }))
 
-  it.effect("waits for the persisted next attempt time", () =>
+  it.effect("rejects early processing without sleeping inside the worker", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()
       const layers = Layer.mergeAll(
@@ -219,16 +285,12 @@ describe("Submission queue", () => {
         )
         yield* Submissions.offer(queue, value)
 
-        const fiber = yield* queue
-          .take((submission, metadata) =>
-            Submissions.processSubmission(submission, metadata)
-          )
-          .pipe(Effect.forkChild)
-        yield* Effect.yieldNow
+        const early = yield* Effect.result(Submissions.processSubmission(value, { id: "early", attempts: 1 }))
+        assert.strictEqual(early._tag === "Failure" && early.failure._tag, "RateLimited")
         assert.strictEqual((yield* client.inbox.messages).length, 0)
 
         yield* TestClock.adjust(1_000)
-        yield* Fiber.join(fiber)
+        yield* queue.take((submission, metadata) => Submissions.processSubmission(submission, metadata))
       }).pipe(Effect.provide(layers))
 
       assert.strictEqual((yield* client.inbox.messages).length, 1)
@@ -716,6 +778,46 @@ describe("Submission queue", () => {
         "uncertain"
       )
     }))
+
+  it.effect("reconciles expired claims with non-resolving events", () =>
+    Effect.gen(function* () {
+      const store = yield* DeliveryStore.DeliveryStore
+      for (const [index, type] of (["opened", "delivered"] as const).entries()) {
+        const id = deliveryId(`stale_with_event_${index}`)
+        yield* store.createIntent({ ...intentInput, deliveryId: id })
+        yield* store.beginAttempt(id, 1)
+        yield* store.appendProviderEvent({
+          id: `event_${index}`,
+          deliveryId: id,
+          type,
+          // A terminal event from a different provider cannot resolve this intent.
+          ...(type === "delivered" ? { provider: "unrelated-provider" } : {}),
+          occurredAt: yield* DateTime.now
+        })
+      }
+      const resolved = deliveryId("stale_resolved_by_event")
+      yield* store.createIntent({ ...intentInput, deliveryId: resolved })
+      yield* store.beginAttempt(resolved, 1)
+      yield* store.appendProviderEvent({
+        id: "resolving_event",
+        deliveryId: resolved,
+        type: "delivered",
+        occurredAt: yield* DateTime.now
+      })
+      yield* TestClock.adjust(60_000)
+      const reconciled = yield* Submissions.reconcileStale()
+      assert.strictEqual(reconciled.length, 2)
+      for (const id of reconciled) {
+        const intent = Option.getOrElse(
+          yield* store.get(id), () => assert.fail("expected stale intent")
+        )
+        assert.strictEqual(intent.status, "uncertain")
+        assert.isUndefined(intent.claimId)
+        assert.strictEqual((yield* store.listEvents(id)).length, 1)
+      }
+      const delivered = yield* store.get(resolved)
+      assert.strictEqual(Option.isSome(delivered) && delivered.value.status, "delivered")
+    }).pipe(Effect.provide(DeliveryStore.layerMemory)))
 
   it.effect("reconciles uncertain deliveries through a provider lookup", () =>
     Effect.gen(function* () {

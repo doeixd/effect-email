@@ -6,7 +6,7 @@ not import providers, Node server bindings, or SMTP adapters.
 
 ## Module availability
 
-| Capability | Node 22+ | Bun | Deno | Cloudflare Workers |
+| Capability | Node 22.19+ | Bun | Deno | Cloudflare Workers |
 | --- | --- | --- | --- | --- |
 | Core message/email/transport/registry APIs | yes | yes | yes | yes |
 | HTTP providers | yes | yes | yes | yes |

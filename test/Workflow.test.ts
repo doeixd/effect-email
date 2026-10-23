@@ -11,6 +11,33 @@ const tenant = tenantId("tenant_workflow")
 const delivery = deliveryId("dlv_workflow_1")
 
 describe("submission workflow", () => {
+  it.effect("uses collision-free identities across tenants, filters, and purposes", () =>
+    Effect.gen(function* () {
+      const first = { tenantId: tenantId("a:b"), deliveryId: deliveryId("c"), message: { to: "a@example.com", subject: "A", text: "A" } }
+      const second = { tenantId: tenantId("a"), deliveryId: deliveryId("b:c"), message: { to: "b@example.com", subject: "B", text: "B" } }
+      assert.notStrictEqual(yield* SubmitWorkflow.SubmitEmail.executionId(first), yield* SubmitWorkflow.SubmitEmail.executionId(second))
+      assert.notStrictEqual(yield* SubmitWorkflow.SubmitAfterDelay.executionId({ ...first, delayMillis: 1 }),
+        yield* SubmitWorkflow.SubmitAfterDelay.executionId({ ...second, delayMillis: 1 }))
+      const wait = { tenantId: tenant, deliveryId: delivery, purpose: "same-purpose" }
+      assert.notStrictEqual(yield* SubmitWorkflow.WaitForDeliveryEvent.executionId({ ...wait, types: ["delivered"] }),
+        yield* SubmitWorkflow.WaitForDeliveryEvent.executionId({ ...wait, types: ["bounced"] }))
+      assert.strictEqual(yield* SubmitWorkflow.WaitForDeliveryEvent.executionId({ ...wait, types: ["bounced", "delivered", "bounced"] }),
+        yield* SubmitWorkflow.WaitForDeliveryEvent.executionId({ ...wait, types: ["delivered", "bounced"] }))
+      const base = SubmissionAdmission.layer({ defaultFrom: "sender@example.com" }).pipe(Layer.provideMerge(
+        Layer.merge(DeliveryStore.layerMemory, Submissions.layerFactoryMemory)
+      ))
+      const app = SubmitWorkflow.layer.pipe(Layer.provideMerge(WorkflowEngine.layerMemory), Layer.provideMerge(base))
+      yield* Effect.gen(function* () {
+        const store = yield* DeliveryStore.DeliveryStore
+        const a = yield* SubmitWorkflow.SubmitEmail.execute(first)
+        const b = yield* SubmitWorkflow.SubmitEmail.execute(second)
+        assert.strictEqual(a.deliveryId, first.deliveryId)
+        assert.strictEqual(b.deliveryId, second.deliveryId)
+        const stored = yield* store.get(second.deliveryId)
+        assert.strictEqual(Option.isSome(stored) && stored.value.tenantId, second.tenantId)
+      }).pipe(Effect.provide(app), Effect.scoped)
+    }))
+
   it.effect("executes admission through the workflow engine", () =>
     Effect.gen(function* () {
       const base = SubmissionAdmission.layer({

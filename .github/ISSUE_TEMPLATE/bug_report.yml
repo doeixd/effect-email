@@ -17,7 +17,7 @@ body:
     attributes:
       label: Runtime
       options:
-        - Node 22+
+        - Node 22.19+
         - Bun
         - Deno
         - Cloudflare Workers

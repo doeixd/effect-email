@@ -10,6 +10,7 @@ export interface ServiceOptions {
     Submissions.SubmissionJob
   >
   readonly tenantId: TenantId
+  /** @deprecated The worker now consumes the supplied queue directly. */
   readonly queueName?: string
   readonly workerConcurrency?: number
   readonly publisherIntervalMillis?: number
@@ -64,9 +65,7 @@ export const start = (
     }).pipe(Effect.forkScoped)
 
     const worker = yield* Submissions.runWorker({
-      ...(options.queueName === undefined
-        ? {}
-        : { name: options.queueName }),
+      queue: options.queue,
       ...(options.workerConcurrency === undefined
         ? {}
         : { concurrency: options.workerConcurrency })

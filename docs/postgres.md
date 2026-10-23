@@ -14,7 +14,9 @@ stored JSON. Run `migrations/0004_cancellations.sql` for durable pre-admission
 cancellation tombstones, `migrations/0005_delivery_tenant.sql` for tenant
 storage/backfill, `migrations/0006_delivery_query_indexes.sql` for bounded
 outbox and stale-claim queries, and `migrations/0007_event_correlation.sql` for
-provider-message correlation. Attempt history is retained inside the intent
+provider-message correlation. Run `migrations/0008_delivery_event_waits.sql` for
+durable typed and purpose-specific workflow event subscriptions. The layer also
+creates this table and its delivery index idempotently. Attempt history is retained inside the intent
 JSON payload; receipt and attempt tables remain a future normalization step.
 
 ```ts
@@ -29,7 +31,11 @@ const deliveryStore = DeliveryStoreSql.layerSql().pipe(
 The package does not depend on a PostgreSQL driver; provide the matching
 `@effect/sql` driver and `SqlClient` layer in the application. The gated
 integration test `test/Postgres.integration.test.ts` verifies transactional
-intent/queue rollback when `DATABASE_URL` is set.
+intent/queue rollback when `DATABASE_URL` is set. Lifecycle mutations take a
+transaction-scoped advisory lock keyed by table prefix and delivery ID before
+locking the intent row. This also serializes creation and cancellation when the
+intent does not exist yet; no additional migration is required for that lock.
+The integration suite covers both cancellation/creation interleavings.
 
 ## Suppressions
 

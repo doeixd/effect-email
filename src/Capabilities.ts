@@ -5,7 +5,8 @@ import type { PreparedMessage } from "./Message"
 
 export const checkCapabilities = (
   transport: Transport,
-  message: PreparedMessage
+  message: PreparedMessage,
+  rawEnvelope?: import("./DeliveryStore").RawEnvelope
 ): Effect.Effect<void, UnsupportedCapability> => {
   const capabilities = transport.capabilities
   const fail = (capability: string, detail: string) =>
@@ -44,7 +45,7 @@ export const checkCapabilities = (
     return fail("tags", "message tags")
   }
   const recipients =
-    message.to.length + message.cc.length + message.bcc.length
+    rawEnvelope?.rcptTo.length ?? (message.to.length + message.cc.length + message.bcc.length)
   const maxRecipients = capabilities.maxRecipientsPerMessage
   if (maxRecipients !== undefined && recipients > maxRecipients) {
     return fail(

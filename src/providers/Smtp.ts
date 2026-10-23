@@ -1,6 +1,8 @@
 import {
   DateTime,
+  Duration,
   Effect,
+  Exit,
   Layer,
   Pool,
   Redacted,
@@ -48,6 +50,9 @@ export interface SmtpOptions {
   readonly account?: string
   readonly maxLineBytes?: number
   readonly maxReplyLines?: number
+  readonly commandTimeoutMillis?: number
+  readonly connectTimeoutMillis?: number
+  readonly cleanupTimeoutMillis?: number
   readonly dkim?: Dkim.DkimOptions
 }
 
@@ -90,18 +95,27 @@ const socketFailure = (
       })
 
 const dotStuff = (content: Uint8Array): Uint8Array => {
-  const chunks: Array<Uint8Array> = []
+  let extra = 0
   let lineStart = true
   let previous = 0
   for (const byte of content) {
     if (lineStart && byte === 46) {
-      chunks.push(Uint8Array.of(46))
+      extra += 1
     }
-    chunks.push(Uint8Array.of(byte))
     lineStart = previous === 13 && byte === 10
     previous = byte
   }
-  return concat(chunks)
+  const result = new Uint8Array(content.length + extra)
+  let offset = 0
+  lineStart = true
+  previous = 0
+  for (const byte of content) {
+    if (lineStart && byte === 46) result[offset++] = 46
+    result[offset++] = byte
+    lineStart = previous === 13 && byte === 10
+    previous = byte
+  }
+  return result
 }
 
 const endsWithCrlf = (content: Uint8Array): boolean =>
@@ -143,6 +157,10 @@ const connect = (
     let submitted = false
     let healthy = true
     let frame = Smtp.emptyLineFrame
+    const timeout = (value: number | undefined, fallback: number) =>
+      value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback
+    const commandTimeout = Duration.millis(timeout(options.commandTimeoutMillis, 30_000))
+    const cleanupTimeout = Duration.millis(timeout(options.cleanupTimeoutMillis, 100))
     const helo = options.helo ?? "localhost"
     const maxLineBytes =
       options.maxLineBytes !== undefined &&
@@ -167,6 +185,7 @@ const connect = (
           host: options.host,
           port: options.port
         })).pipe(
+      Effect.timeout(Duration.millis(timeout(options.connectTimeoutMillis, 10_000))),
       Effect.mapError((cause) =>
         socketFailure("SMTP connection failed", cause, false)
       )
@@ -187,6 +206,7 @@ const connect = (
       chunk: Uint8Array
     ): Effect.Effect<void, TransportError> =>
       writer.write(chunk).pipe(
+        Effect.timeout(commandTimeout),
         Effect.mapError((cause) =>
           socketFailure("SMTP write failed", cause, submitted)
         )
@@ -264,7 +284,10 @@ const connect = (
           lines.push(nextMatch[3] ?? "")
         }
         return { code, lines }
-      })
+      }).pipe(
+        Effect.timeout(commandTimeout),
+        Effect.catchTag("TimeoutError", (cause) => Effect.fail(socketFailure("SMTP reply timed out", cause, submitted)))
+      )
 
     const command = (
       value: string
@@ -327,6 +350,7 @@ const connect = (
       const started = yield* command("STARTTLS")
       yield* expect(started, [220], "STARTTLS rejected")
       yield* reader.upgrade(options.startTlsOptions).pipe(
+        Effect.timeout(commandTimeout),
         Effect.mapError((cause) =>
           socketFailure("SMTP TLS upgrade failed", cause, submitted)
         )
@@ -366,8 +390,12 @@ const connect = (
       }
     }
 
-    yield* Effect.addFinalizer(() =>
-      command("QUIT").pipe(Effect.ignore)
+    yield* Effect.addFinalizer((exit) =>
+      Exit.isSuccess(exit) && healthy
+        ? write(new TextEncoder().encode("QUIT\r\n")).pipe(
+            Effect.timeoutOption(cleanupTimeout), Effect.interruptible, Effect.ignore
+          )
+        : Effect.void
     )
 
     const send = Effect.fnUntraced(function* (
@@ -396,17 +424,21 @@ const connect = (
             )
 
       submitted = false
-      const mail = yield* command(
-        `MAIL FROM:<${envelope.message.from.address}>`
-      )
+      const mailFrom =
+        envelope.rawEnvelope === undefined
+          ? envelope.message.from.address
+          : envelope.rawEnvelope.mailFrom ?? ""
+      const mail = yield* command(`MAIL FROM:<${mailFrom}>`)
       yield* expect(mail, [250], "MAIL FROM rejected")
 
-      for (const address of [
-        ...envelope.message.to,
-        ...envelope.message.cc,
-        ...envelope.message.bcc
-      ]) {
-        const rcpt = yield* command(`RCPT TO:<${address.address}>`)
+      const recipients = envelope.rawEnvelope?.rcptTo ??
+        [
+          ...envelope.message.to,
+          ...envelope.message.cc,
+          ...envelope.message.bcc
+        ].map((address) => address.address)
+      for (const address of recipients) {
+        const rcpt = yield* command(`RCPT TO:<${address}>`)
         yield* expect(rcpt, [250, 251], "RCPT TO rejected")
       }
 
@@ -426,18 +458,18 @@ const connect = (
       const accepted = yield* readReply()
       yield* expect(accepted, [250], "Message rejected")
 
-      const reset = yield* Effect.result(command("RSET"))
-      if (
-        reset._tag === "Failure" ||
-        reset.success.code !== 250
-      ) {
-        healthy = false
-      }
+      // A successful DATA reply already closes the transaction. Do not let
+      // optional reset/quit replies hide confirmed provider acceptance.
       const acceptedAt = yield* DateTime.now
       return receiptFor(envelope, destination, acceptedAt)
     })
 
-    return { send, healthy: () => healthy }
+    return {
+      send: (envelope) => send(envelope).pipe(Effect.onExit((exit) => Effect.sync(() => {
+        if (Exit.isFailure(exit)) healthy = false
+      }))),
+      healthy: () => healthy
+    }
   })
 
 const makeTransport = (
@@ -475,11 +507,7 @@ export const makePooled = (
 ): Effect.Effect<Transport, never, Scope.Scope> =>
   Effect.gen(function* () {
     const pool = yield* Pool.make({
-      acquire: connect(options).pipe(
-        Effect.mapError((cause) =>
-          socketFailure("SMTP connection failed", cause, false)
-        )
-      ),
+      acquire: connect(options),
       size: Math.max(1, options.poolSize ?? 4)
     })
 
@@ -489,9 +517,10 @@ export const makePooled = (
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* Pool.get(pool)
-          const result = yield* Effect.result(session.send(envelope))
+          const result = yield* Effect.result(session.send(envelope).pipe(
+            Effect.onExit((exit) => Exit.isFailure(exit) ? Pool.invalidate(session)(pool) : Effect.void)
+          ))
           if (result._tag === "Failure") {
-            yield* Pool.invalidate(session)(pool)
             return yield* result.failure
           }
           if (!session.healthy()) {

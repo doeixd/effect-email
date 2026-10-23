@@ -1,4 +1,4 @@
-import { ByteSize, DateTime, Effect, Option, Schema } from "effect"
+import { ByteSize, Cause, DateTime, Effect, Option, Schema } from "effect"
 import { WorkflowEngine } from "effect/workflow"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -20,12 +20,15 @@ import {
 } from "../Ids"
 import {
   DeliveryId as DeliveryIdSchema,
+  DestinationId as DestinationIdSchema,
+  ProviderMessageId as ProviderMessageIdSchema,
   RouteName as RouteNameSchema,
   TenantId as TenantIdSchema
 } from "../Ids"
 import { MessageInputSchema } from "../Message"
 import { SubmissionAdmission } from "../SubmissionAdmission"
-import { completeDeliveryEvent } from "../workflow/Submissions"
+import { notifyDeliveryEvent } from "../workflow/Submissions"
+import { eventMatchesIntent } from "../DeliveryTransitions"
 
 export const SubmissionRequest = Schema.Struct({
   tenantId: TenantIdSchema,
@@ -39,6 +42,11 @@ export type SubmissionRequest = typeof SubmissionRequest.Type
 
 const EventRequest = Schema.Struct({
   id: Schema.NonEmptyString,
+  provider: Schema.optionalKey(Schema.NonEmptyString),
+  destinationId: Schema.optionalKey(DestinationIdSchema),
+  providerMessageId: Schema.optionalKey(ProviderMessageIdSchema),
+  dispatchGeneration: Schema.optionalKey(Schema.Int),
+  recipient: Schema.optionalKey(Schema.String),
   type: DeliveryEventType,
   occurredAt: Schema.optionalKey(Schema.DateTimeUtc),
   payload: Schema.optionalKey(Schema.Json)
@@ -404,15 +412,14 @@ const makeHandle = (options: GatewayOptions) =>
     }
     const occurredAt = decoded.success.occurredAt ?? (yield* DateTime.now)
     const inserted = yield* admission.appendProviderEvent({
-      id: decoded.success.id,
+      ...decoded.success,
       deliveryId: makeDeliveryId(eventTarget),
-      type: decoded.success.type,
-      occurredAt,
-      ...(decoded.success.payload === undefined
-        ? {}
-        : { payload: decoded.success.payload })
+      occurredAt
     })
-    if (inserted) {
+    // Retried webhooks must also retry durable notifications if the process
+    // stopped after storing the event and before waking its subscribers.
+    {
+      const canonical = Option.getOrUndefined(yield* admission.getEvent(decoded.success.id))
       const engine = yield* Effect.serviceOption(
         WorkflowEngine.WorkflowEngine
       )
@@ -422,18 +429,24 @@ const makeHandle = (options: GatewayOptions) =>
         )
         if (
           Option.isSome(stored) &&
-          stored.value.tenantId !== undefined
+          canonical !== undefined &&
+          canonical.deliveryId === makeDeliveryId(eventTarget) &&
+          stored.value.tenantId !== undefined &&
+          eventMatchesIntent(canonical, stored.value)
         ) {
-          yield* completeDeliveryEvent(
+          yield* notifyDeliveryEvent(
             stored.value.tenantId,
-            makeDeliveryId(eventTarget),
-            decoded.success.type
+            canonical.type,
+            yield* admission.listEventWaits(makeDeliveryId(eventTarget)),
+            stored.value.dispatchGeneration
           ).pipe(
             Effect.provideService(
               WorkflowEngine.WorkflowEngine,
               engine.value
             ),
-            Effect.ignore
+            Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.fail(StoreUnavailable.new({ message: "provider event notification failed", cause })))
           )
         }
       }

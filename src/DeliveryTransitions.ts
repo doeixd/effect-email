@@ -34,11 +34,12 @@ const canonical = (value: unknown): unknown => {
 }
 
 export const fingerprintOf = (input: CreateDeliveryIntent): string =>
-  JSON.stringify(
+  "v2:" + JSON.stringify(
     canonical({
       message: input.message,
       defaultFrom: input.defaultFrom,
-      route: input.route ?? null
+      route: input.route ?? null,
+      rawEnvelope: input.rawEnvelope ?? null
     })
   )
 
@@ -91,10 +92,13 @@ export const existingIntent = (
   existing: DeliveryIntent,
   input: CreateDeliveryIntent
 ): DeliveryIntent | IdempotencyConflict =>
-  existing.fingerprint === fingerprintOf(input)
+  existing.tenantId === input.tenantId &&
+  (existing.fingerprint.startsWith("v2:")
+    ? existing.fingerprint
+    : fingerprintOf(existing)) === fingerprintOf(input)
     ? existing
     : IdempotencyConflict.new({
-        message: `delivery ${existing.deliveryId} already exists with different content`,
+        message: `delivery ${existing.deliveryId} already exists with different content or tenant`,
         provider: "delivery-store",
         idempotencyKey: existing.deliveryId
       })
@@ -203,6 +207,9 @@ export const beginAttempt = (
           ? `delivery already has an active claim: ${intent.deliveryId}`
           : `delivery claim expired; reconciliation required: ${intent.deliveryId}`
     })
+  }
+  if (intent.cancellationRequested) {
+    return { ...intent, status: "canceled", updatedAt: now }
   }
   const claimId = options.claimId ?? newAttemptId()
   const leaseMillis = options.leaseMillis ?? 30_000
@@ -378,10 +385,9 @@ export const markQueued = (
   dispatchGeneration: number,
   now: DateTime.Utc
 ): DeliveryIntent | StoreUnavailable =>
-  transition(intent, dispatchGeneration, now, (current) => ({
-    ...current,
-    queuedAt: now
-  }))
+  intent.dispatchGeneration !== dispatchGeneration
+    ? staleGeneration(intent.deliveryId, dispatchGeneration)
+    : { ...intent, queuedAt: now }
 
 export const cancellationOutcome = (
   intent: DeliveryIntent | undefined
@@ -416,10 +422,17 @@ export const redrive = (
   intent: DeliveryIntent,
   now: DateTime.Utc,
   options: {
+    readonly acknowledgeDuplicateRisk?: boolean
     readonly actor?: string
     readonly reason?: string
   } = {}
-): DeliveryIntent => {
+): DeliveryIntent | StoreUnavailable => {
+  if (intent.status === "in-progress") {
+    return StoreUnavailable.new({ message: `cannot redrive an active delivery; reconcile it first: ${intent.deliveryId}` })
+  }
+  if (intent.status === "uncertain" && options.acknowledgeDuplicateRisk !== true) {
+    return StoreUnavailable.new({ message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${intent.deliveryId}` })
+  }
   const {
     receipt: _receipt,
     error: _error,
@@ -433,6 +446,7 @@ export const redrive = (
   return {
     ...base,
     dispatchGeneration: intent.dispatchGeneration + 1,
+    providerIdempotencyKey: `redrive_${newAttemptId()}`,
     status: "pending",
     attempts: 0,
     cancellationRequested: false,
@@ -487,18 +501,34 @@ export const eventMatchesIntent = (
   event: DeliveryEvent,
   intent: DeliveryIntent
 ): boolean => {
+  if (
+    event.dispatchGeneration !== undefined &&
+    event.dispatchGeneration !== intent.dispatchGeneration
+  ) {
+    return false
+  }
+  // After redrive, a bare delivery id cannot distinguish an old webhook from
+  // an event for the current dispatch.
+  if (intent.dispatchGeneration > 1 && event.dispatchGeneration === undefined &&
+    event.providerMessageId === undefined) {
+    return false
+  }
   const receipt = intent.receipt
   if (receipt === undefined) {
     return (
-      event.provider === undefined &&
-      event.destinationId === undefined
+      (event.dispatchGeneration === intent.dispatchGeneration &&
+        event.deliveryId === intent.deliveryId) ||
+      (event.provider === undefined && event.destinationId === undefined &&
+        event.providerMessageId === undefined)
     )
   }
   return (
     (event.provider === undefined ||
       event.provider === receipt.provider) &&
     (event.destinationId === undefined ||
-      event.destinationId === receipt.destinationId)
+      event.destinationId === receipt.destinationId) &&
+    (event.providerMessageId === undefined ||
+      event.providerMessageId === receipt.providerMessageId)
   )
 }
 

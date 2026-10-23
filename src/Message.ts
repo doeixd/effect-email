@@ -584,11 +584,17 @@ export const prepare = Effect.fn("Message.prepare")(function* (
     })
   }
 
+  const deliveryId = draft.deliveryId ?? defaults.deliveryId
+  if (deliveryId !== undefined) {
+    yield* Schema.decodeUnknownEffect(DeliveryIdSchema)(deliveryId).pipe(
+      Effect.mapError(() => new InvalidMessage({ message: "invalid delivery id" }))
+    )
+  }
 
   return Object.freeze({
     ...draft,
     from,
-    deliveryId: draft.deliveryId ?? defaults.deliveryId
+    deliveryId
   })
 })
 

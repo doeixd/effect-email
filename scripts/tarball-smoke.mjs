@@ -9,6 +9,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 
 const root = process.cwd()
+const sourcePackage = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
 const work = join(root, ".tarball-smoke")
 let tarball
 const npm = (args) =>
@@ -40,9 +41,28 @@ try {
   const pkg = JSON.parse(
     readFileSync(join(packageRoot, "package.json"), "utf8")
   )
+  if (pkg.name !== sourcePackage.name || pkg.version !== sourcePackage.version) {
+    throw new Error("packaged name/version differs from the release manifest")
+  }
   for (const target of Object.values(pkg.exports)) {
     if (!existsSync(join(packageRoot, target))) {
       throw new Error(`missing packaged export target: ${target}`)
+    }
+    if (target.endsWith(".js") && !existsSync(join(packageRoot, target.replace(/\.js$/, ".d.ts")))) {
+      throw new Error(`missing packaged declarations: ${target}`)
+    }
+  }
+
+  const readme = readFileSync(join(packageRoot, "README.md"), "utf8")
+  for (const match of readme.matchAll(/\]\((\.\.?\/[^)#]+)(?:#[^)]*)?\)/g)) {
+    if (!existsSync(join(packageRoot, match[1]))) {
+      throw new Error(`missing README-linked package content: ${match[1]}`)
+    }
+  }
+  for (let migration = 1; migration <= 8; migration++) {
+    const prefix = String(migration).padStart(4, "0") + "_"
+    if (!packed[0].files.some(({ path }) => path.startsWith(`migrations/${prefix}`))) {
+      throw new Error(`missing packaged migration: ${prefix}`)
     }
   }
 

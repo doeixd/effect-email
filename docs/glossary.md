@@ -13,7 +13,8 @@
 - **Retry:** another attempt through the same destination, subject to the retry
   policy and attempt budget.
 - **Redrive:** an explicit operator action under a new dispatch generation.
-  Uncertain redrive requires duplicate-risk acknowledgment.
+  Active attempts reject redrive; reconcile first. Uncertain redrive requires
+  duplicate-risk acknowledgment.
 - **Cancel:** request that future dispatch stop. The outcome is
   `canceled-before-dispatch`, `cancellation-requested`, or `already-submitted`.
 - **Receipt:** provider acceptance metadata, including destination and provider

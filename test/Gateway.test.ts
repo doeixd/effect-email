@@ -113,6 +113,30 @@ const send = (
   })
 
 describe("Gateway", () => {
+  it.effect("preserves verified event identity when projecting delivery status", () =>
+    Effect.gen(function* () {
+      const client = yield* Mock.makeClient()
+      yield* Effect.gen(function* () {
+        const admission = yield* SubmissionAdmission.SubmissionAdmission
+        yield* admission.accept(requestBody)
+        yield* admission.queue.take((job, metadata) => Submissions.processSubmission(job, metadata))
+        const current = yield* send("GET", `/v1/emails/${delivery}`)
+        const providerMessageId = current.body.providerMessageId
+        assert.isString(providerMessageId)
+        yield* send("POST", `/v1/emails/${delivery}/events`, {
+          id: "wrong-message", type: "bounced", providerMessageId: "old-message", dispatchGeneration: 1
+        })
+        assert.strictEqual((yield* send("GET", `/v1/emails/${delivery}`)).body.status, "accepted")
+        yield* send("POST", `/v1/emails/${delivery}/events`, {
+          id: "right-message", type: "delivered", providerMessageId, dispatchGeneration: 1
+        })
+        assert.strictEqual((yield* send("GET", `/v1/emails/${delivery}`)).body.status, "delivered")
+        const events = yield* admission.listEvents(delivery)
+        assert.strictEqual(events.find((event) => event.id === "wrong-message")?.providerMessageId, "old-message")
+        assert.strictEqual(events.find((event) => event.id === "right-message")?.providerMessageId, providerMessageId)
+      }).pipe(Effect.provide(layersFor(client)))
+    }))
+
   it.effect("accepts a submission and exposes its status", () =>
     Effect.gen(function* () {
       const client = yield* Mock.makeClient()
@@ -142,7 +166,7 @@ describe("Gateway", () => {
         const event = yield* send(
           "POST",
           `/v1/emails/${delivery}/events`,
-          { id: "evt_1", type: "delivered" }
+          { id: "evt_1", type: "delivered", dispatchGeneration: 2 }
         )
         const events = yield* send(
           "GET",

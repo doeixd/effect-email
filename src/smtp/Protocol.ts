@@ -181,8 +181,16 @@ export const takeLine = (
 }
 
 export interface DataDecoder {
+  /** Only the suffix needed to recognize a terminator across packets. */
   readonly buffer: Uint8Array
   readonly discarding: boolean
+  readonly chunks?: DataChunk
+  readonly size?: number
+}
+
+interface DataChunk {
+  readonly content: Uint8Array
+  readonly previous?: DataChunk
 }
 
 export const emptyDataDecoder: DataDecoder = {
@@ -199,22 +207,18 @@ export interface DataDecoderResult {
 }
 
 const unstuff = (content: Uint8Array): Uint8Array => {
-  const chunks: Array<Uint8Array> = []
-  let start = 0
-  while (start <= content.length) {
-    const index = indexOf(content, CRLF, start)
-    const end = index < 0 ? content.length : index
-    const line = content.slice(start, end)
-    chunks.push(
-      line.length >= 2 && line[0] === 46 && line[1] === 46
-        ? line.slice(1)
-        : line
-    )
-    if (index < 0) break
-    chunks.push(CRLF)
-    start = index + CRLF.length
+  const result = new Uint8Array(content.length)
+  let offset = 0
+  let lineStart = true
+  for (let index = 0; index < content.length; index++) {
+    if (lineStart && content[index] === 46 && content[index + 1] === 46) {
+      index += 1
+    }
+    const byte = content[index]!
+    result[offset++] = byte
+    lineStart = index > 0 && content[index - 1] === 13 && byte === 10
   }
-  return concatAll(chunks)
+  return result.subarray(0, offset)
 }
 
 const concatAll = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
@@ -234,34 +238,33 @@ export const pushData = (
   maxBytes?: number
 ): DataDecoderResult => {
   const buffer = concat(decoder.buffer, chunk)
+  const size = decoder.size ?? 0
+  const empty = !decoder.discarding && size === 0 &&
+    buffer[0] === 46 && buffer[1] === 13 && buffer[2] === 10
   const terminator = indexOf(buffer, DATA_TERMINATOR)
-  if (terminator < 0) {
-    if (
-      !decoder.discarding &&
-      maxBytes !== undefined &&
-      buffer.length > maxBytes
-    ) {
-      return {
-        decoder: {
-          buffer: buffer.slice(-DATA_TERMINATOR.length),
-          discarding: true
-        },
-        complete: false,
-        tooLarge: true
-      }
-    }
+  if (!empty && terminator < 0) {
+    const discarding = decoder.discarding ||
+      (maxBytes !== undefined && size + buffer.length > maxBytes + DATA_TERMINATOR.length - 1)
+    const split = Math.max(0, buffer.length - (DATA_TERMINATOR.length - 1))
     return {
-      decoder: { buffer, discarding: decoder.discarding },
+      decoder: {
+        buffer: buffer.slice(split),
+        discarding,
+        ...(!discarding ? {
+          size: size + split,
+          chunks: split === 0 ? decoder.chunks : {
+            content: buffer.slice(0, split), previous: decoder.chunks
+          }
+        } : {})
+      },
       complete: false,
-      tooLarge: decoder.discarding
+      tooLarge: discarding
     }
   }
 
-  const raw = buffer.slice(0, terminator + CRLF.length)
-  const remainder = buffer.slice(
-    terminator + DATA_TERMINATOR.length
-  )
-  if (decoder.discarding) {
+  const end = empty ? 0 : terminator + CRLF.length
+  const remainder = buffer.slice(empty ? 3 : terminator + DATA_TERMINATOR.length)
+  if (decoder.discarding || (maxBytes !== undefined && size + end > maxBytes)) {
     return {
       decoder: emptyDataDecoder,
       complete: true,
@@ -269,19 +272,19 @@ export const pushData = (
       remainder
     }
   }
-  if (maxBytes !== undefined && raw.length > maxBytes) {
-    return {
-      decoder: emptyDataDecoder,
-      complete: true,
-      tooLarge: true,
-      remainder
-    }
+  const chunks: Array<Uint8Array> = []
+  let saved = decoder.chunks
+  while (saved !== undefined) {
+    chunks.push(saved.content)
+    saved = saved.previous
   }
+  chunks.reverse()
+  chunks.push(buffer.subarray(0, end))
   return {
     decoder: emptyDataDecoder,
     complete: true,
     tooLarge: false,
-    content: unstuff(raw),
+    content: unstuff(concatAll(chunks)),
     remainder
   }
 }

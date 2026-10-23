@@ -15,8 +15,8 @@ PgClient
 
 Run the publisher, worker, and reconciler through `Service.start`. It returns a
 scoped handle with `health` and `shutdown`, and the three loops remain separate.
-When supplying a custom queue, pass the matching `queueName`; the worker creates
-its own queue handle by name:
+The worker consumes the supplied queue directly, including its retry policy.
+Pass `admission.queue` to `Service.start`; no matching `queueName` is required:
 
 - The publisher recovers committed-but-unqueued intents.
 - The worker claims and dispatches queue items.
@@ -51,6 +51,7 @@ Apply migrations in order before starting the service:
 0005_delivery_tenant.sql
 0006_delivery_query_indexes.sql
 0007_event_correlation.sql
+0008_delivery_event_waits.sql
 ```
 
 `layerSql` creates missing tables for development, but `CREATE TABLE IF NOT EXISTS` is not an upgrade strategy. Use the migration files for existing
@@ -72,4 +73,5 @@ DATABASE_URL=postgres://user:pass@localhost:5432/effect_email \
 ```
 
 The example uses the Mock provider so it does not require provider credentials.
-Use `Email.layerValidated` for typed configuration failures when assembling the\nroute layer. Replace the Mock route with a provider transport for real delivery.
+Use `Email.layerValidated` for typed configuration failures when assembling the
+route layer. Replace the Mock route with a provider transport for real delivery.

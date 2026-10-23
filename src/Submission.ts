@@ -136,6 +136,7 @@ export interface PreparedEnvelope {
   readonly destination: Destination
   readonly destinationId: DestinationId
   readonly providerIdempotencyKey?: string
+  readonly rawEnvelope?: import("./DeliveryStore").RawEnvelope
 }
 
 export const makeReceipt = (input: {

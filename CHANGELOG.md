@@ -1,112 +1,88 @@
 # Changelog
 
-## 0.4.0
-
-- Upgraded `effect`, `@effect/platform-node`, `@effect/platform-node-shared`,
-  `@effect/sql-pg`, `@effect/sql-sqlite-node`, and `@effect/vitest` from
-  `4.0.0-rc.118` to stable `4.0.6`.
-- Verified the full suite, PostgreSQL integration, build, dist smoke, tarball
-  smoke, and Effect language-service diagnostics against the stable release.
-
-## 0.3.1
-
-- SQL pruning now matches memory retention for delivered, bounced, and
-  complained intents.
-- Redrive clears event ordering so the new dispatch generation can accept its
-  own provider events.
-- Provider-message correlation requires a destination and event projection
-  keeps ordering after repeated same-status events.
-- Automatic complaint/bounce suppression validates destination/provider and
-  isolates suppression-store failures from event ingestion.
-- Terminal deliveries reject new attempt claims.
-- Gateway delivery listings accept bounded tenant, limit, and cursor queries.
-- Memory provider-message lookup now matches SQL by selecting the latest intent.
-- Native batch retry maps provider outcomes by their declared index.
-- Typed event waits fail instead of looping when completed by a non-matching event.
-- Admission snapshots template drafts as well as template message inputs.
-- Gateway 5xx responses no longer echo internal/provider error messages.
-- Added the Effect Language Service configuration and `effect:diagnostics` script.
-- Schema error classes use the static `new` construction pattern so decoding
-  behavior is preserved while causes remain sanitized.
-- PostgreSQL example reads `DATABASE_URL` through `Config.Redacted`.
-- Added typed `TransportRegistry.makeValidated` / `layerValidated` and
-  `CloudflareEmail.makeValidated` / `layerValidated` configuration paths.
-- Fallback invokes the failover callback only after target validation.
 ## 0.3.0
 
-- HTTP provider request failures before a response now surface as
-  `DeliveryUncertain` and are not retried automatically.
-- `withRetry` preserves native batch dispatch instead of silently falling back
-  to per-message sends.
-- `DeliveryStoreSql` uses transaction-local delivery state so concurrent
-  operations on different deliveries cannot overwrite each other.
-- Policy wrappers and the durable worker share retry decisions. Permanent local
-  failures stop without consuming repeated queue attempts, while retryable
-  rejections and rate limits honor their budgets and delays.
-- Native batch retry preserves original indexes and never replays accepted or
-  uncertain slots. Safe partial-subset retry is opt-in via
-  `capabilities.partialBatchRetry`.
-- Fallback revalidates the secondary transport before dispatch and uses the
-  smaller composite batch/recipient limits.
-- Added policy composition documentation and regressions for partial batch
-  retry, fallback capability validation, and composite limits.
-- Memory and SQL delivery stores now share pure lifecycle transitions. SQL
-  transactions decode, transition, and persist one row without a memory-store
-  restore/snapshot cycle.
-- Added memory/SQL lifecycle parity coverage for deferred, accepted, delivered,
-  redrive, and cancellation transitions.
-- Attempts now acquire exclusive `claimId`/`claimExpiresAt` leases. A second
-  worker cannot claim an in-progress delivery, and stale claims cannot record
-  outcomes.
-- SQL intent creation is atomic under concurrent insertion. Identical content
-  returns the existing intent; different content returns `IdempotencyConflict`.
-- Added concurrent create/claim coverage on SQLite and PostgreSQL.
-- Delivery intents retain an embedded attempt history with claim IDs,
-  timestamps, status, destination, receipt, and error details.
-- SQL intents store and index `tenant_id`; `0005_delivery_tenant.sql` backfills
-  existing PostgreSQL rows from stored JSON.
-- Publisher and reconciler now use bounded delivery-ID pages for tenant outbox
-  and stale-claim queries. `0006_delivery_query_indexes.sql` adds supporting
-  indexes and the `claim_expires_at` column.
-- Admission now uses the shared message preparation path, so invalid messages
-  fail before a durable intent is created.
-- Added `Routing.explain` for side-effect-free capability, requirement, and
-  explicit-route diagnostics, plus `Routing` package export and docs.
-- Provider events now carry ingestion time, provider/destination identity, and
-  optional recipient/provider event IDs. Correlation uses receipt message IDs
-  and destination, not caller-supplied delivery IDs alone.
-- Event projection is deterministic: older events and contradictory terminal
-  events are stored but cannot regress delivery status.
-- `0007_event_correlation.sql` adds and backfills the provider message ID index.
-- `WaitForDeliveryEvent` accepts explicit event types and re-checks stored events
-  before blocking.
-- The worker re-checks suppression immediately before dispatch.
-- Cancellation returns `canceled-before-dispatch`, `cancellation-requested`, or
-  `already-submitted`; uncertain redrive requires explicit duplicate-risk
-  acknowledgment.
-- Added a PostgreSQL durable-service example with admission, worker, publisher,
-  reconciler, status lookup, and scoped shutdown.
-- Added three adoption-level README guidance, a production assembly guide, and
-  a delivery glossary.
-- Added tenant/status paged operator queries and redrive actor/reason history.
-- Documented retention boundaries and verified pruning keeps non-terminal work.
-- Added a provider evidence matrix, Effect dependency strategy, and release
-  qualification guidance.
-- Added SMTP slow-client and invalid-command recovery coverage.
-- Added `smoke:tarball` to build, pack, extract, verify exports, and import
-  packaged root/provider/gateway/workflow/SMTP modules.
-- Added bounded admission/attempt/acceptance/uncertainty/retry/failure metrics.
-- Verified complaint events automatically suppress recipients when a suppression
-  store is assembled; bounce suppression is opt-in.
-- Added `Submissions.reconcileUncertain` for paged provider-lookup reconciliation.
-- Gateway diagnostics and health now use grouped status counts instead of loading
-  all pending, failed, and uncertain intents.
-- Added `Email.layerValidated` for typed configuration failures.
-- Added the scoped `Service.start` runtime helper with worker/publisher/
-  reconciler health and shutdown.
-- Added regressions for ambiguous HTTP failures, native batch retries, shared
-  retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
-  transactions.
+This release combines the unreleased delivery-service work and correctness,
+security, and performance fixes since the 0.2 series. Read the
+[upgrade guide](./docs/upgrading-0.3.md) before restarting durable workloads.
+
+### Added
+
+- `Routing.explain` for capability and explicit-route diagnostics without sending.
+- Typed assembly through `Email.layerValidated`, registry validation, and
+  Cloudflare binding validation.
+- `Service.start` for scoped publisher, worker, and reconciler loops with health
+  and shutdown handles; custom queues are consumed directly with their policy.
+- Exclusive attempt claims, embedded attempt history, tenant/status paging,
+  redrive audit, grouped diagnostics, and admission/delivery metrics.
+- `Submissions.reconcileUncertain` for provider lookup, including deliveries
+  without an acceptance receipt.
+- Durable typed and purpose-specific workflow event subscriptions, backed by
+  memory and SQL delivery stores; webhook replay retries missed notifications.
+- PostgreSQL migrations through `0008_delivery_event_waits.sql`, a runnable
+  durable-service example, and production, operations, and policy guides.
+- SMTP client connection, command, and cleanup deadlines.
+
+### Changed
+
+- Pin Effect and matching runtime, SQL, and test packages to stable `4.0.6`.
+- Require Node 22.19.0 or newer for Node bindings, matching the HTTP runtime dependency.
+- Use versioned, unambiguous workflow identities. Persisted executions must be
+  drained or explicitly migrated before new submissions use the new keys.
+- Require canonical event lookup (`getEvent`) and event-wait registration,
+  removal, and listing in custom delivery stores.
+- Reschedule deferred delivery jobs using queue visibility delays, preserving
+  provider-attempt budgets and backoff without occupying workers.
+- Generate stable batch/stream provider keys and delivery IDs on replay. Keep
+  message order, and stream chunk size, unchanged for a given idempotency key.
+- Reject redrive while a provider attempt is active. Uncertain redrive still
+  requires explicit duplicate-risk acknowledgment.
+
+### Fixed
+
+- Fence suppression outcomes with the worker's acquired attempt claim, preventing
+  duplicate workers from overwriting an active provider submission.
+- Serialize PostgreSQL admission, cancellation, and lifecycle updates even before
+  an intent exists; an acknowledged cancellation cannot race past creation.
+- Treat conflicting native batch indexes as uncertain before retry decisions,
+  preventing accepted messages from being submitted again.
+- Preserve arbitrary JSON template data, metadata, and event payloads through SQL
+  storage, including objects resembling internal serialization markers.
+- Return retryable webhook failures when suppression or workflow notification
+  fails; replay retries follow-up work using the canonical stored event.
+- Rotate provider idempotency keys for redrive while keeping retries within the
+  new dispatch stable, and reject replay with changed SMTP envelope addresses.
+- Encode MIME leaf parts without incorrectly marking multipart containers as
+  base64 content.
+- Treat ambiguous HTTP submission failures as uncertain; never automatically
+  retry or fail over a submission whose acceptance is unknown.
+- Preserve native batch operations through retry decorators. Keep accepted and
+  uncertain slots out of retries; safe partial retry remains opt-in.
+- Preserve completed rate-limit chunks after later failure, and normalize
+  fallback outcomes by declared indexes on both legs.
+- Count actual SMTP envelope recipients in quota/capability checks and record
+  retryable native-batch row failures in circuit-breaker health.
+- Share lifecycle transitions between memory and SQL stores; use transaction-local
+  locked rows for concurrent intent creation, claims, and outcome updates.
+- Preserve active claims during queue publication and check cancellation
+  atomically before acquiring an attempt.
+- Reject delivery-ID reuse across tenants and prevent cross-tenant workflow-key
+  collisions and cached-result reuse.
+- Match provider events against destination/account, provider message ID, and
+  dispatch generation; retain miscorrelated events without treating them as
+  delivery evidence or workflow completion.
+- Reconcile expired claims despite non-resolving events, and keep scoped
+  complaint suppression from affecting another account's recipients.
+- Reject delivery-ID MIME header injection, preserve null SMTP reverse paths,
+  and redirect explicit envelope recipients when teeing to a sink.
+- Close SMTP sessions after overlong commands; bound discarded DATA buffers and
+  parse incoming DATA in linear time without per-byte output allocations.
+- Produce verifiable DKIM signatures with correct header ordering, duplicate
+  header selection, relaxed body handling, and binary MIME preservation.
+- Preserve confirmed SMTP acceptance without waiting for reset/quit replies;
+  bound cleanup and discard interrupted pooled sessions.
+- Apply one stream concurrency limit across chunks and native requests.
+- Keep terminal retention behavior consistent across memory and SQL stores.
 
 ## 0.2.1
 

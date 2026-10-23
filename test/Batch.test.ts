@@ -92,7 +92,7 @@ describe("Email.sendBatch", () => {
       assert.strictEqual(attempts.length, 1)
     }))
 
-  it.effect("derives a unique provider idempotency key per message", () =>
+  it.effect("derives unique provider keys and stable identities across batch replay", () =>
     Effect.gen(function* () {
       const recorder = yield* RecordingTransport.make()
       const layer = Email.layer({
@@ -107,14 +107,21 @@ describe("Email.sendBatch", () => {
         ],
         { providerIdempotencyKey: "batch-key" }
       ).pipe(Effect.provide(layer))
+      yield* Email.sendBatch(
+        [message("one@example.com"), message("two@example.com")],
+        { providerIdempotencyKey: "batch-key" }
+      ).pipe(Effect.provide(layer))
 
       const attempts = yield* recorder.attempts
       const keys = attempts.map(
         (attempt) => attempt.envelope.providerIdempotencyKey
       )
-      assert.strictEqual(keys.length, 2)
+      assert.strictEqual(keys.length, 4)
       assert.isTrue(keys.every((key) => key?.startsWith("batch-key:")))
       assert.notStrictEqual(keys[0], keys[1])
+      assert.deepStrictEqual(keys.slice(0, 2), keys.slice(2))
+      assert.deepStrictEqual(attempts.slice(0, 2).map((item) => item.envelope.deliveryId),
+        attempts.slice(2).map((item) => item.envelope.deliveryId))
     }))
 
   it.effect("fails when the route does not exist", () =>

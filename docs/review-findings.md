@@ -2,6 +2,34 @@
 
 Started: 2026-10-22
 
+## 0.3.0 release qualification
+
+The sections below retain historical review evidence. Unpublished development
+version labels and earlier test counts are not release history; the changelog
+consolidates this work into 0.3.0.
+
+- Node 22.23.1 / PostgreSQL 16: 369 tests passed in 65 files, with no skips.
+- Build and TypeScript checks passed. Effect diagnostics report zero errors,
+  zero warnings, and two informational suggestions.
+- Tarball validation and a clean npm consumer install passed, including public
+  imports and a Mock send with one deduplicated Effect 4.0.6 runtime. All eight
+  SQL migrations passed on PostgreSQL 16, including repeat application.
+- Follow-up regressions cover policy composition, native outcome indexes,
+  replay-stable keys, claim/cancellation/redrive races, account-scoped receipt
+  correlation, durable typed wait subscriptions, webhook replay, SMTP framing,
+  verifiable DKIM, recipient quotas, and bounded/interrupted SMTP I/O.
+- The final review's nine issues are fixed: suppression claim fencing,
+  missing-intent PostgreSQL cancellation races, duplicate batch retry indexes,
+  SQL JSON marker collisions, retryable webhook notifications and suppression,
+  per-redrive provider keys, multipart MIME encoding, and envelope fingerprints.
+  Fourteen additional regression cases cover these failures, including both
+  PostgreSQL cancellation interleavings and canonical-body webhook replay.
+- Published upgrade guidance covers changed workflow identities, custom-store
+  interfaces, retry scheduling, event identity, and migration `0008`.
+- Provider fixtures establish contract coverage, not live sandbox qualification.
+  The current [release checklist](./release.md) records packaging checks and
+  release steps; production workload qualification remains application-specific.
+
 ## Snapshot
 
 Baseline before review:
@@ -14,7 +42,7 @@ Baseline before review:
 - PostgreSQL integration test not run in the initial baseline; previously
   verified against PostgreSQL 16.
 
-Current snapshot after review fixes:
+Historical snapshot after the initial review fixes:
 
 - `bun run typecheck`: pass.
 - `bun run test`: 244 passed, 1 skipped, 53 test files passed, 54 discovered.
@@ -23,7 +51,7 @@ Current snapshot after review fixes:
 - No open Critical/High blockers remain; residual release constraints are listed
   below.
 
-Follow-up snapshot (`1b8f168`, 0.4.0):
+Historical stable-Effect development snapshot (`1b8f168`, before 0.3.0 qualification):
 
 - `bun run check`: 305 passed across 60 files, including PostgreSQL 17
   integration.

@@ -73,6 +73,7 @@ export const deliveryStatusForEvent = (
 export const DeliveryEvent = Schema.Struct({
   id: Schema.NonEmptyString,
   deliveryId: Schema.optionalKey(DeliveryIdSchema),
+  dispatchGeneration: Schema.optionalKey(Schema.Int),
   provider: Schema.optionalKey(Schema.NonEmptyString),
   destinationId: Schema.optionalKey(DestinationIdSchema),
   providerMessageId: Schema.optionalKey(ProviderMessageIdSchema),
@@ -104,6 +105,15 @@ export interface DeliveryStoreSnapshot {
   readonly intents: ReadonlyArray<DeliveryIntent>
   readonly events: ReadonlyArray<DeliveryEvent>
   readonly cancellations?: ReadonlyArray<DeliveryId>
+  readonly eventWaits?: ReadonlyArray<DeliveryEventWait>
+}
+
+export interface DeliveryEventWait {
+  readonly executionId: string
+  readonly tenantId: TenantId
+  readonly deliveryId: DeliveryId
+  readonly types?: ReadonlyArray<DeliveryEventType>
+  readonly dispatchGeneration?: number
 }
 
 export type DeliveryAttemptStatus =
@@ -262,7 +272,8 @@ export interface DeliveryStoreShape {
     deliveryId: DeliveryId
   ) => Effect.Effect<ReadonlyArray<DeliveryAttempt>, StoreUnavailable>
   readonly findByProviderMessageId: (
-    providerMessageId: ProviderMessageId
+    providerMessageId: ProviderMessageId,
+    options?: { readonly provider?: string; readonly destinationId?: DestinationId }
   ) => Effect.Effect<Option.Option<DeliveryIntent>, StoreUnavailable>
   readonly listUnqueuedForTenant: (options: {
     readonly tenantId: TenantId
@@ -292,9 +303,13 @@ export interface DeliveryStoreShape {
   readonly appendProviderEvent: (
     event: DeliveryEvent
   ) => Effect.Effect<boolean, StoreUnavailable>
+  readonly getEvent: (id: string) => Effect.Effect<Option.Option<DeliveryEvent>, StoreUnavailable>
   readonly listEvents: (
     deliveryId?: DeliveryId
   ) => Effect.Effect<ReadonlyArray<DeliveryEvent>, StoreUnavailable>
+  readonly registerEventWait: (wait: DeliveryEventWait) => Effect.Effect<void, StoreUnavailable>
+  readonly removeEventWait: (executionId: string) => Effect.Effect<void, StoreUnavailable>
+  readonly listEventWaits: (deliveryId: DeliveryId) => Effect.Effect<ReadonlyArray<DeliveryEventWait>, StoreUnavailable>
   readonly prune: (
     options: DeliveryStorePruneOptions
   ) => Effect.Effect<DeliveryStorePruneResult, StoreUnavailable>
@@ -324,6 +339,7 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
     const cancellations = yield* Ref.make<ReadonlySet<string>>(
       new Set()
     )
+    const eventWaits = yield* Ref.make<ReadonlyMap<string, DeliveryEventWait>>(new Map())
 
     const get: DeliveryStoreShape["get"] = (deliveryId) =>
       Effect.map(Ref.get(state), (intents) =>
@@ -569,18 +585,8 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
             if (intent === undefined) {
               return [Transitions.missingIntent(deliveryId), intents]
             }
-            if (
-              intent.status === "uncertain" &&
-              options?.acknowledgeDuplicateRisk !== true
-            ) {
-              return [
-                StoreUnavailable.new({
-                  message: `redrive of uncertain delivery requires duplicate-risk acknowledgment: ${deliveryId}`
-                }),
-                intents
-              ]
-            }
             const nextIntent = Transitions.redrive(intent, now, options)
+            if (nextIntent instanceof StoreUnavailable) return [nextIntent, intents]
             const next = new Map(intents)
             next.set(deliveryId, nextIntent)
             return [nextIntent, next]
@@ -606,12 +612,14 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
       )
 
     const findByProviderMessageId: DeliveryStoreShape["findByProviderMessageId"] =
-      (providerMessageId) =>
+      (providerMessageId, options = {}) =>
         Effect.map(Ref.get(state), (intents) => {
           let latest: DeliveryIntent | undefined
           for (const intent of intents.values()) {
             if (
-              intent.receipt?.providerMessageId !== providerMessageId
+              intent.receipt?.providerMessageId !== providerMessageId ||
+              (options.provider !== undefined && intent.receipt.provider !== options.provider) ||
+              (options.destinationId !== undefined && intent.receipt.destinationId !== options.destinationId)
             ) {
               continue
             }
@@ -634,7 +642,9 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           event.deliveryId === undefined &&
           event.providerMessageId !== undefined &&
           event.destinationId !== undefined
-            ? yield* findByProviderMessageId(event.providerMessageId)
+            ? yield* findByProviderMessageId(event.providerMessageId, {
+                provider: event.provider, destinationId: event.destinationId
+              })
             : Option.none()
         const storedEvent: DeliveryEvent = {
           ...event,
@@ -871,19 +881,34 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
             .slice(0, options.limit)
         ),
       appendProviderEvent,
+      getEvent: (id) => Ref.get(events).pipe(Effect.map((current) => Option.fromNullishOr(current.get(id)))),
       listEvents,
+      registerEventWait: (wait) => Ref.update(eventWaits, (current) => {
+        if (current.has(wait.executionId)) return current
+        return new Map(current).set(wait.executionId, wait)
+      }),
+      removeEventWait: (executionId) => Ref.update(eventWaits, (current) => {
+        const next = new Map(current)
+        next.delete(executionId)
+        return next
+      }),
+      listEventWaits: (deliveryId) => Ref.get(eventWaits).pipe(Effect.map((current) =>
+        [...current.values()].filter((wait) => wait.deliveryId === deliveryId)
+      )),
       prune,
       isCancellationRequested,
       snapshot: Effect.map(
         Effect.all([
           Ref.get(state),
           Ref.get(events),
-          Ref.get(cancellations)
+          Ref.get(cancellations),
+          Ref.get(eventWaits)
         ]),
-        ([intents, storedEvents, storedCancellations]) => ({
+        ([intents, storedEvents, storedCancellations, waits]) => ({
           intents: [...intents.values()],
           events: [...storedEvents.values()],
-          cancellations: [...storedCancellations] as Array<DeliveryId>
+          cancellations: [...storedCancellations] as Array<DeliveryId>,
+          eventWaits: [...waits.values()]
         })
       ),
       restore: (snapshot) =>
@@ -910,7 +935,10 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
               cancellations,
               new Set(snapshot.cancellations ?? [])
             )
-          )
+          ),
+          Effect.flatMap(() => Ref.set(eventWaits, new Map(
+            (snapshot.eventWaits ?? []).map((wait) => [wait.executionId, wait])
+          )))
         )
     }
   })

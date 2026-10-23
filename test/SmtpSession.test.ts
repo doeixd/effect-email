@@ -35,6 +35,22 @@ const connection = (chunks: ReadonlyArray<string>) => {
 }
 
 describe("SMTP session", () => {
+  it.effect("closes after one rejection of an unterminated overlong command", () =>
+    Effect.gen(function* () {
+      const test = connection(["A".repeat(513)])
+      yield* Session.runSession({
+        connection: {
+          ...test.value,
+          write: (chunk) => test.writes.length >= 3
+            ? Effect.fail(new Session.SmtpConnectionError({ message: "reply loop" }))
+            : test.value.write(chunk)
+        },
+        admit: () => Effect.void
+      })
+      assert.strictEqual(test.writes.length, 2)
+      assert.isTrue(test.writes[1]!.startsWith("500 "))
+    }))
+
   it.effect("accepts a pipelined transaction and preserves data bytes", () =>
     Effect.gen(function* () {
       const submissions: Array<SmtpSubmission> = []

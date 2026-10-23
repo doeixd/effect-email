@@ -39,10 +39,19 @@ The HTTP gateway accepts the same information through
 The intent retains `redriveHistory` with the previous generation, timestamp,
 actor, and reason.
 
+Redrive also persists a fresh provider idempotency key. Retry jobs within that
+dispatch reuse it; the prior dispatch's provider response cannot deduplicate a
+new redrive. This also replaces any caller-supplied key from admission.
+
+An in-progress delivery rejects redrive, including when duplicate risk is
+acknowledged. Reconcile it first. Advancing a generation does not cancel a
+provider call that is still running.
+
 ## Retention
 
 `DeliveryStore.prune` removes only terminal intents and old events. Pending,
-in-progress, accepted, uncertain, and delivered intents remain available.
+in-progress, accepted, and uncertain intents remain available. Old rejected,
+failed, canceled, delivered, bounced, and complained intents are eligible.
 
 - Content and receipt references follow the intent lifecycle.
 - Provider events are pruned by occurrence time.
@@ -73,9 +82,32 @@ const reconciled = yield* Submissions.reconcileUncertain({
 })
 ```
 
-The helper pages uncertain intents, appends only delivered/bounced/complained
-events, and leaves lookup failures observable. It cannot promise recovery when
-the provider has no usable lookup or receipt.
+The example maps receipt-based retrieval to delivered/bounced/complained events.
+The helper also calls `lookup` for receipt-less uncertainty. Implement that
+branch using a provider-supported lookup by `intent.providerIdempotencyKey` or
+`intent.deliveryId` when available; returning `Option.none()` leaves it unresolved.
+Lookup results are bound to the generation being reconciled. Failure does not
+authorize a resend, and providers without a usable lookup may require operator
+reconciliation.
+
+## Provider events and workflow waits
+
+Include provider, destination/account, and provider message ID when correlating
+events. Provider message IDs are not assumed unique across accounts. Events
+that do not match the current receipt or generation remain in audit history but
+cannot resolve a workflow wait or project delivery status.
+
+Typed and purpose-specific waits register in the delivery store. Provide the
+workflow engine to the gateway to wake matching waits. Webhook retries use the
+stored canonical event and retry notifications even when ingestion deduplicates
+the event. Use `interruptDeliveryEventWait` with the engine and delivery store
+in context to remove interrupted subscriptions.
+
+Failures during suppression or workflow notification return HTTP 503, even if
+the event was already stored. Configure webhook retries for those responses.
+Replays use `getEvent(id)` to retry follow-up work from the canonical event;
+changing the replay body cannot change suppression targets or event types.
+Suppression writes may repeat after a partial failure and must be idempotent.
 
 ## Diagnostics and tracing
 

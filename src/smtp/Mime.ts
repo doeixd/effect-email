@@ -214,7 +214,14 @@ export const buildMime = (
     const domain =
       message.from.address.split("@")[1] ?? "localhost"
     const messageId =
-      options.messageId ?? `<${deliveryId}@${domain}>`
+      options.messageId ?? `<${encodeURIComponent(deliveryId)}@${domain}>`
+    if (/[\r\n\0]/.test(messageId)) {
+      return yield* UnsupportedCapability.new({
+        message: "message id must not contain line breaks or NUL bytes",
+        provider: "smtp",
+        capability: "message-id"
+      })
+    }
     const date = options.date ?? new Date()
     const headers: Array<string> = [
       `From: ${formatAddress(message.from)}`,
@@ -238,7 +245,9 @@ export const buildMime = (
 
     if (attachmentParts.length === 0) {
       headers.push(`Content-Type: ${body.contentType}`)
-      headers.push("Content-Transfer-Encoding: base64")
+      if (!body.contentType.startsWith("multipart/")) {
+        headers.push("Content-Transfer-Encoding: base64")
+      }
       return new TextEncoder().encode(
         headers.join(CRLF) + CRLF + CRLF + body.body + CRLF
       )
