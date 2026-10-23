@@ -1,9 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Option } from "effect"
 import { SqliteClient } from "@effect/sql-sqlite-node"
-import { DeliveryStore } from "../src/DeliveryStore"
+import { DeliveryStore, layerMemory } from "../src/DeliveryStore"
 import * as DeliveryStoreSql from "../src/DeliveryStoreSql"
 import { deliveryId, destinationId, makeDestination } from "../src/Ids"
+import { TransportUnavailable } from "../src/EmailError"
+import { makeReceipt } from "../src/Submission"
 
 const target = deliveryId("dlv_sql_store_1")
 
@@ -84,4 +86,79 @@ describe("DeliveryStore SQL", () => {
       assert.strictEqual(pruned.events, 1)
       assert.strictEqual((yield* store.listEvents(target)).length, 0)
     }).pipe(Effect.provide(layer)))
+
+  it.effect("keeps memory and SQL lifecycle transitions in parity", () =>
+    Effect.gen(function* () {
+      const run = Effect.gen(function* () {
+        const store = yield* DeliveryStore
+        const id = deliveryId("dlv_sql_parity")
+        const receipt = makeReceipt({
+          provider: "mock",
+          destinationId: destinationId(
+            makeDestination({ provider: "mock", account: "default" })
+          ),
+          deliveryId: id,
+          acceptedAt: DateTime.makeUnsafe(new Date(0))
+        })
+
+        yield* store.createIntent({ ...input, deliveryId: id })
+        yield* store.beginAttempt(id, 1)
+        yield* store.recordDeferred(
+          id,
+          1,
+          new TransportUnavailable({
+            message: "retry",
+            provider: "mock",
+            retryable: true
+          }),
+          1_000
+        )
+        yield* store.beginAttempt(id, 1)
+        yield* store.recordAccepted(id, 1, receipt)
+        yield* store.appendProviderEvent({
+          id: "parity_delivered",
+          deliveryId: id,
+          type: "delivered",
+          occurredAt: DateTime.makeUnsafe(new Date(1))
+        })
+
+        const delivered = yield* store.get(id)
+        yield* store.redrive(id)
+        yield* store.requestCancellation(id)
+        const final = yield* store.get(id)
+        const events = yield* store.listEvents(id)
+
+        return {
+          deliveredStatus: Option.isSome(delivered)
+            ? delivered.value.status
+            : undefined,
+          deliveredAttempts: Option.isSome(delivered)
+            ? delivered.value.attempts
+            : undefined,
+          deliveredReceipt: Option.isSome(delivered)
+            ? delivered.value.receipt?.provider
+            : undefined,
+          finalStatus: Option.isSome(final)
+            ? final.value.status
+            : undefined,
+          finalGeneration: Option.isSome(final)
+            ? final.value.dispatchGeneration
+            : undefined,
+          finalAttempts: Option.isSome(final)
+            ? final.value.attempts
+            : undefined,
+          cancellationRequested: Option.isSome(final)
+            ? final.value.cancellationRequested
+            : undefined,
+          events: events.map((event) => event.type)
+        }
+      })
+
+      const memory = yield* run.pipe(
+        Effect.provide(layerMemory)
+      )
+      const sql = yield* run.pipe(Effect.provide(layer))
+
+      assert.deepStrictEqual(memory, sql)
+    }))
 })

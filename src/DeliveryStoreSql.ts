@@ -1,5 +1,4 @@
 import {
-  Context,
   DateTime,
   Effect,
   Layer,
@@ -10,17 +9,13 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import type {
   DeliveryEvent,
-  DeliveryIntent,
-  DeliveryStoreShape,
-  DeliveryStoreSnapshot
+  DeliveryIntent
 } from "./DeliveryStore"
+import { newDeliveryId } from "./Ids"
 import type { DeliveryId } from "./Ids"
-import {
-  DeliveryStore,
-  deliveryStatusForEvent,
-  layerMemory
-} from "./DeliveryStore"
-import { StoreUnavailable } from "./EmailError"
+import { DeliveryStore } from "./DeliveryStore"
+import * as Transitions from "./DeliveryTransitions"
+import { IdempotencyConflict, StoreUnavailable } from "./EmailError"
 
 export interface DeliveryStoreSqlOptions {
   readonly tableName?: string
@@ -117,13 +112,6 @@ export const layerSql = (
         `${events}_occurred`
       )} ON ${sql(events)} (occurred_at)`
 
-      const memoryStore = Effect.scoped(
-        Effect.map(
-          Layer.build(layerMemory),
-          (context) => Context.get(context, DeliveryStore)
-        )
-      )
-
       const allIntents = Effect.map(
         sql<{ readonly data: string }>`SELECT data FROM ${sql(
           intents
@@ -213,64 +201,70 @@ export const layerSql = (
             )} WHERE delivery_id = ${deliveryId} WITH (UPDLOCK, ROWLOCK)`
         })
 
-      const runIntent = <A, E>(
-        deliveryId: string,
-        persist: boolean,
-        run: (store: DeliveryStoreShape) => Effect.Effect<A, E>,
+      const runTransition = (
+        deliveryId: DeliveryId,
+        change: Transitions.IntentTransition,
         clearCancellation = false
-      ): Effect.Effect<A, E | StoreUnavailable> =>
+      ): Effect.Effect<DeliveryIntent, StoreUnavailable> =>
         sql
           .withTransaction(
             Effect.gen(function* () {
               const rows = yield* selectIntent(deliveryId)
-              const memory = yield* memoryStore
-              const existing =
-                rows[0] === undefined
-                  ? undefined
-                  : (decode(JSON.parse(rows[0].data)) as DeliveryIntent)
-              const canceled = yield* sql<{
-                readonly delivery_id: string
-              }>`SELECT delivery_id FROM ${sql(
-                cancellations
-              )} WHERE delivery_id = ${deliveryId}`
-              yield* memory.restore({
-                intents: existing === undefined ? [] : [existing],
-                events: [],
-                cancellations:
-                  canceled.length === 0
-                    ? []
-                    : [deliveryId as DeliveryId]
-              })
-              const result = yield* Effect.result(run(memory))
-              if (result._tag === "Success" && persist) {
-                const snapshot = yield* memory.snapshot
-                const next = snapshot.intents[0]
-                if (next !== undefined) {
-                  yield* saveIntent(next)
-                }
+              if (rows[0] === undefined) {
+                return yield* Transitions.missingIntent(deliveryId)
               }
-              if (result._tag === "Success" && clearCancellation) {
+              const existing = decode(
+                JSON.parse(rows[0].data)
+              ) as DeliveryIntent
+              const now = yield* DateTime.now
+              const next = change(existing, now)
+              if (next instanceof StoreUnavailable) {
+                return yield* next
+              }
+              yield* saveIntent(next)
+              if (clearCancellation) {
                 yield* sql`DELETE FROM ${sql(
                   cancellations
                 )} WHERE delivery_id = ${deliveryId}`
               }
-              return result
+              return next
             })
           )
-          .pipe(
-            Effect.flatMap((result) =>
-              result._tag === "Failure"
-                ? Effect.fail(result.failure)
-                : Effect.succeed(result.success)
-            ),
-            Effect.mapError(normalizeError)
-          )
-
+          .pipe(Effect.mapError(normalizeError))
       return {
-        createIntent: (input) =>
-          runIntent(input.deliveryId ?? "", true, (memory) =>
-            memory.createIntent(input)
-          ),
+        createIntent: (input) => {
+          const deliveryId = input.deliveryId ?? newDeliveryId()
+          return sql
+            .withTransaction(
+              Effect.gen(function* () {
+                const rows = yield* selectIntent(deliveryId)
+                const existing =
+                  rows[0] === undefined
+                    ? undefined
+                    : (decode(JSON.parse(rows[0].data)) as DeliveryIntent)
+                if (existing !== undefined) {
+                  const result = Transitions.existingIntent(existing, input)
+                  if (result instanceof IdempotencyConflict) {
+                    return yield* result
+                  }
+                  return result
+                }
+                const canceled = yield* sql<{
+                  readonly delivery_id: string
+                }>`SELECT delivery_id FROM ${sql(
+                  cancellations
+                )} WHERE delivery_id = ${deliveryId}`
+                const intent = Transitions.createIntent(input, {
+                  deliveryId,
+                  now: yield* DateTime.now,
+                  cancellationRequested: canceled.length > 0
+                })
+                yield* saveIntent(intent)
+                return intent
+              })
+            )
+            .pipe(Effect.mapError(normalizeError))
+        },
         get: (deliveryId) =>
           sql<{ readonly data: string }>`SELECT data FROM ${sql(
             intents
@@ -284,66 +278,78 @@ export const layerSql = (
             Effect.mapError(normalizeError)
           ),
         beginAttempt: (deliveryId, generation) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.beginAttempt(deliveryId, generation)
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.beginAttempt(intent, generation, now)
           ),
         recordAccepted: (deliveryId, generation, receipt) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.recordAccepted(deliveryId, generation, receipt)
-          ),
-        recordRejected: (deliveryId, generation, error) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.recordRejected(deliveryId, generation, error)
-          ),
-        recordUncertain: (deliveryId, generation, error) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.recordUncertain(deliveryId, generation, error)
-          ),
-        recordFailed: (deliveryId, generation, error) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.recordFailed(deliveryId, generation, error)
-          ),
-        recordDeferred: (deliveryId, generation, error, delay) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.recordDeferred(
-              deliveryId,
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.recordAccepted(
+              intent,
               generation,
+              now,
+              receipt
+            )
+          ).pipe(Effect.asVoid),
+        recordRejected: (deliveryId, generation, error) =>
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.recordRejected(
+              intent,
+              generation,
+              now,
+              error
+            )
+          ).pipe(Effect.asVoid),
+        recordUncertain: (deliveryId, generation, error) =>
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.recordUncertain(
+              intent,
+              generation,
+              now,
+              error
+            )
+          ).pipe(Effect.asVoid),
+        recordFailed: (deliveryId, generation, error) =>
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.recordFailed(
+              intent,
+              generation,
+              now,
+              error
+            )
+          ).pipe(Effect.asVoid),
+        recordDeferred: (deliveryId, generation, error, delay) =>
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.recordDeferred(
+              intent,
+              generation,
+              now,
               error,
               delay
             )
-          ),
+          ).pipe(Effect.asVoid),
         markQueued: (deliveryId, generation) =>
-          runIntent(deliveryId, true, (memory) =>
-            memory.markQueued(deliveryId, generation)
-          ),
-        requestCancellation: (deliveryId) =>
+          runTransition(deliveryId, (intent, now) =>
+            Transitions.markQueued(intent, generation, now)
+          ).pipe(Effect.asVoid),        requestCancellation: (deliveryId) =>
           sql
             .withTransaction(
               Effect.gen(function* () {
-                const memory = yield* memoryStore
                 const rows = yield* selectIntent(deliveryId)
-                const existing =
-                  rows[0] === undefined
-                    ? undefined
-                    : (decode(JSON.parse(rows[0].data)) as DeliveryIntent)
-                if (existing !== undefined) {
-                  yield* memory.restore({
-                    intents: [existing],
-                    events: [],
-                    cancellations: []
-                  })
-                  yield* memory.requestCancellation(deliveryId)
-                  const snapshot = yield* memory.snapshot
-                  const next = snapshot.intents[0]
-                  if (next !== undefined) {
-                    yield* saveIntent(next)
-                  }
+                if (rows[0] !== undefined) {
+                  const existing = decode(
+                    JSON.parse(rows[0].data)
+                  ) as DeliveryIntent
+                  yield* saveIntent(
+                    Transitions.requestCancellation(
+                      existing,
+                      yield* DateTime.now
+                    )
+                  )
                 }
                 yield* saveCancellation(deliveryId)
               })
             )
-            .pipe(Effect.mapError(normalizeError)),
-        isCancellationRequested: (deliveryId) =>
+            .pipe(Effect.mapError(normalizeError)),        isCancellationRequested: (deliveryId) =>
           Effect.gen(function* () {
             const canceled = yield* sql<{
               readonly delivery_id: string
@@ -370,13 +376,11 @@ export const layerSql = (
             ).cancellationRequested
           }),
         redrive: (deliveryId) =>
-          runIntent(
+          runTransition(
             deliveryId,
-            true,
-            (memory) => memory.redrive(deliveryId),
+            (intent, now) => Transitions.redrive(intent, now),
             true
-          ),
-        listUncertain: intentsByStatus("uncertain").pipe(
+          ),        listUncertain: intentsByStatus("uncertain").pipe(
           Effect.mapError(normalizeError)
         ),
         listPending: intentsByStatus("pending").pipe(
@@ -410,20 +414,19 @@ export const layerSql = (
                 }
                 yield* saveEvent(event)
                 if (event.deliveryId !== undefined) {
-                  const status = deliveryStatusForEvent(event.type)
-                  if (status !== undefined) {
-                    const intentRows = yield* selectIntent(
-                      event.deliveryId
+                  const intentRows = yield* selectIntent(
+                    event.deliveryId
+                  )
+                  if (intentRows[0] !== undefined) {
+                    const intent = decode(
+                      JSON.parse(intentRows[0].data)
+                    ) as DeliveryIntent
+                    const nextIntent = Transitions.applyProviderEvent(
+                      intent,
+                      event
                     )
-                    if (intentRows[0] !== undefined) {
-                      const intent = decode(
-                        JSON.parse(intentRows[0].data)
-                      ) as DeliveryIntent
-                      yield* saveIntent({
-                        ...intent,
-                        status,
-                        updatedAt: event.occurredAt
-                      })
+                    if (nextIntent !== intent) {
+                      yield* saveIntent(nextIntent)
                     }
                   }
                 }

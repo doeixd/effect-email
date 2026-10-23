@@ -2,8 +2,8 @@
 
 Date: 2026-10-22
 Initial baseline: `6ff0142137284a7000ee831d63fb6574d1c8ed1e`
-Current baseline: `167a194` (PR 3)
-Status: PR 1-3 complete; later PRs proposed
+Current baseline: `167a194` plus PR 4
+Status: PR 1-4 complete; later PRs proposed
 Inventory: `docs/baseline-inventory.md`
 Lifecycle decision: `docs/adr/0001-delivery-lifecycle.md`
 Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20.md`
@@ -15,7 +15,7 @@ Archived source plan: `docs/planning/effect-email-implementation-plan-2026-10-20
 | 1 | Complete | `5049082` adds the baseline inventory, lifecycle ADR, and updated docs |
 | 2 | Complete | Shared retry decisions, permanent-error worker handling, response-loss regression, retry matrix tests |
 | 3 | Complete | Native batch retry preserves indexes and accepted/uncertain slots; opt-in subset retry, fallback capability validation, composite limits, and policy-order docs added |
-| 4 | Partial | Transaction-local SQL state exists; pure shared transitions remain |
+| 4 | Complete | Pure lifecycle transitions are shared by memory and SQL; SQL transitions no longer use memory restore/snapshot; parity coverage added |
 | 5-12 | Not started | See the PR sequence |
 
 ## 1. Objective
@@ -47,6 +47,7 @@ already addressed:
 | Policy and worker encoded separate retry decisions | Shared retry decisions cover uncertainty, permanent errors, retryable rejections, rate limits, delays, and exhaustion |
 | Native batch retry could not resume partial work safely | `withRetry` preserves original indexes, never replays accepted/uncertain slots, and offers opt-in `partialBatchRetry` |
 | Fallback could dispatch to a target that lacked the required capability | Fallback revalidates the secondary; composite batch and recipient limits use the smaller leg |
+| SQL transitions executed through a memory service | Memory and SQL now apply the same pure transitions from `src/DeliveryTransitions.ts` |
 
 Still current:
 
@@ -429,9 +430,8 @@ Priority: P1 quality foundation; P2 extended coverage.
 | 11 | Operator queries, metrics, retention | 6, 8 | Bounded queries, redaction, reference-safe pruning |
 | 12 | Provider/SMTP conformance + release qualification | 3, 10, 11 | Published support matrix and tarball smoke tests |
 
-PRs 2 and 3 are complete. The transaction-local SQL portion of PR 4 is already
-in `4bf13f9`; pure shared transitions and the remaining PR 4 acceptance criteria
-are not.
+PRs 2-4 are complete. PR 5 remains: atomic claims, atomic creation, and tenant
+identity migration.
 
 ## 15. Compatibility and migration
 

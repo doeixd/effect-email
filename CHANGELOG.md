@@ -18,6 +18,11 @@
   smaller composite batch/recipient limits.
 - Added policy composition documentation and regressions for partial batch
   retry, fallback capability validation, and composite limits.
+- Memory and SQL delivery stores now share pure lifecycle transitions. SQL
+  transactions decode, transition, and persist one row without a memory-store
+  restore/snapshot cycle.
+- Added memory/SQL lifecycle parity coverage for deferred, accepted, delivered,
+  redrive, and cancellation transitions.
 - Added regressions for ambiguous HTTP failures, native batch retries, shared
   retry decisions, permanent worker failures, and concurrent PostgreSQL delivery
   transactions.

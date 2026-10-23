@@ -1,7 +1,6 @@
 import {
   Context,
   DateTime,
-  Duration,
   Effect,
   Layer,
   Option,
@@ -18,6 +17,7 @@ import type { EmailError } from "./EmailError"
 import { IdempotencyConflict, StoreUnavailable } from "./EmailError"
 import type { MailboxInput, MessageDraft, MessageInput } from "./Message"
 import type { SubmissionReceipt } from "./Submission"
+import * as Transitions from "./DeliveryTransitions"
 
 export type DeliveryStatus =
   | "pending"
@@ -214,50 +214,6 @@ export class DeliveryStore extends Context.Service<
   DeliveryStoreShape
 >()("@effect-email/DeliveryStore") {}
 
-const canonical = (value: unknown): unknown => {
-  if (value instanceof Uint8Array) {
-    return Array.from(value)
-  }
-  if (Array.isArray(value)) {
-    return value.map(canonical)
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, canonical(entry)])
-    )
-  }
-  return value
-}
-
-const fingerprintOf = (input: CreateDeliveryIntent): string =>
-  JSON.stringify(
-    canonical({
-      message: input.message,
-      defaultFrom: input.defaultFrom,
-      route: input.route ?? null
-    })
-  )
-
-const missing = (deliveryId: DeliveryId): StoreUnavailable =>
-  new StoreUnavailable({
-    message: `delivery intent not found: ${deliveryId}`
-  })
-
-const stale = (deliveryId: DeliveryId, generation: number): StoreUnavailable =>
-  new StoreUnavailable({
-    message: `stale dispatch generation ${generation} for ${deliveryId}`
-  })
-
-type BeginResult =
-  | { readonly _tag: "ok"; readonly intent: DeliveryIntent }
-  | StoreUnavailable
-
-type RedriveResult =
-  | { readonly _tag: "ok"; readonly intent: DeliveryIntent }
-  | StoreUnavailable
-
 export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
   DeliveryStore,
   Effect.gen(function* () {
@@ -279,42 +235,22 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
     const createIntent: DeliveryStoreShape["createIntent"] = (input) =>
       Effect.gen(function* () {
         const deliveryId = input.deliveryId ?? newDeliveryId()
-        const dispatchGeneration = input.dispatchGeneration ?? 1
-        const fingerprint = fingerprintOf(input)
         const existing = (yield* Ref.get(state)).get(deliveryId)
         if (existing !== undefined) {
-          if (existing.fingerprint === fingerprint) {
-            return existing
+          const result = Transitions.existingIntent(existing, input)
+          if (result instanceof IdempotencyConflict) {
+            return yield* result
           }
-          return yield* new IdempotencyConflict({
-            message: `delivery ${deliveryId} already exists with different content`,
-            provider: "delivery-store",
-            idempotencyKey: deliveryId
-          })
+          return result
         }
         const now = yield* DateTime.now
-        const cancellationRequested = (
-          yield* Ref.get(cancellations)
-        ).has(deliveryId)
-        const intent: DeliveryIntent = {
+        const intent = Transitions.createIntent(input, {
           deliveryId,
-          ...(input.tenantId === undefined ? {} : { tenantId: input.tenantId }),
-          dispatchGeneration,
-          message: input.message,
-          defaultFrom: input.defaultFrom,
-          ...(input.route === undefined ? {} : { route: input.route }),
-          providerIdempotencyKey:
-            input.providerIdempotencyKey ?? deliveryId,
-          ...(input.rawEnvelope === undefined
-            ? {}
-            : { rawEnvelope: input.rawEnvelope }),
-          fingerprint,
-          status: "pending",
-          attempts: 0,
-          cancellationRequested,
-          createdAt: now,
-          updatedAt: now
-        }
+          now,
+          cancellationRequested: (
+            yield* Ref.get(cancellations)
+          ).has(deliveryId)
+        })
         yield* Ref.update(state, (intents) => {
           const next = new Map(intents)
           next.set(deliveryId, intent)
@@ -323,123 +259,120 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
         return intent
       })
 
-    const update = (
+    const applyTransition = (
       deliveryId: DeliveryId,
       dispatchGeneration: number,
-      change: (intent: DeliveryIntent, now: DateTime.Utc) => DeliveryIntent
-    ): Effect.Effect<void, StoreUnavailable> =>
-      Effect.gen(function* () {
-        const now = yield* DateTime.now
-        yield* Ref.modify(state, (intents) => {
-          const intent = intents.get(deliveryId)
-          if (intent === undefined) {
-            return [missing(deliveryId), intents]
-          }
-          if (intent.dispatchGeneration !== dispatchGeneration) {
-            return [stale(deliveryId, dispatchGeneration), intents]
-          }
-          const next = new Map(intents)
-          next.set(deliveryId, change(intent, now))
-          return [undefined, next]
-        }).pipe(
-          Effect.flatMap((error) =>
-            error === undefined ? Effect.void : Effect.fail(error)
-          )
-        )
-      })
-
-    const beginAttempt: DeliveryStoreShape["beginAttempt"] = (
-      deliveryId,
-      dispatchGeneration
-    ) =>
+      change: Transitions.IntentTransition
+    ): Effect.Effect<DeliveryIntent, StoreUnavailable> =>
       Effect.gen(function* () {
         const now = yield* DateTime.now
         const result = yield* Ref.modify(
           state,
           (
             intents
-          ): readonly [BeginResult, ReadonlyMap<string, DeliveryIntent>] => {
+          ): readonly [
+            DeliveryIntent | StoreUnavailable,
+            ReadonlyMap<string, DeliveryIntent>
+          ] => {
             const intent = intents.get(deliveryId)
             if (intent === undefined) {
-              return [missing(deliveryId), intents]
+              return [Transitions.missingIntent(deliveryId), intents]
             }
-            if (intent.dispatchGeneration !== dispatchGeneration) {
-              return [stale(deliveryId, dispatchGeneration), intents]
-            }
-            const nextIntent: DeliveryIntent = {
-              ...intent,
-              attempts: intent.attempts + 1,
-              status: "in-progress",
-              updatedAt: now
+            const nextIntent = change(intent, now)
+            if (nextIntent instanceof StoreUnavailable) {
+              return [nextIntent, intents]
             }
             const next = new Map(intents)
             next.set(deliveryId, nextIntent)
-            return [{ _tag: "ok", intent: nextIntent }, next]
+            return [nextIntent, next]
           }
         )
-        if (result._tag === "StoreUnavailable") {
+        if (result instanceof StoreUnavailable) {
           return yield* result
         }
-        return result.intent
+        return result
       })
+
+    const update = (
+      deliveryId: DeliveryId,
+      dispatchGeneration: number,
+      change: Transitions.IntentTransition
+    ): Effect.Effect<void, StoreUnavailable> =>
+      Effect.asVoid(
+        applyTransition(deliveryId, dispatchGeneration, change)
+      )
+
+    const beginAttempt: DeliveryStoreShape["beginAttempt"] = (
+      deliveryId,
+      dispatchGeneration
+    ) =>
+      applyTransition(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.beginAttempt(intent, dispatchGeneration, now)
+      )
 
     const markQueued: DeliveryStoreShape["markQueued"] = (
       deliveryId,
       dispatchGeneration
     ) =>
-      update(deliveryId, dispatchGeneration, (intent, now) => ({
-        ...intent,
-        queuedAt: now,
-        updatedAt: now
-      }))
+      update(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.markQueued(intent, dispatchGeneration, now)
+      )
 
     const recordAccepted: DeliveryStoreShape["recordAccepted"] = (
       deliveryId,
       dispatchGeneration,
       receipt
     ) =>
-      update(deliveryId, dispatchGeneration, (intent, now) => ({
-        ...intent,
-        status: "accepted",
-        receipt,
-        updatedAt: now
-      }))
+      update(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.recordAccepted(
+          intent,
+          dispatchGeneration,
+          now,
+          receipt
+        )
+      )
 
     const recordRejected: DeliveryStoreShape["recordRejected"] = (
       deliveryId,
       dispatchGeneration,
       error
     ) =>
-      update(deliveryId, dispatchGeneration, (intent, now) => ({
-        ...intent,
-        status: "rejected",
-        error,
-        updatedAt: now
-      }))
+      update(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.recordRejected(
+          intent,
+          dispatchGeneration,
+          now,
+          error
+        )
+      )
 
     const recordUncertain: DeliveryStoreShape["recordUncertain"] = (
       deliveryId,
       dispatchGeneration,
       error
     ) =>
-      update(deliveryId, dispatchGeneration, (intent, now) => ({
-        ...intent,
-        status: "uncertain",
-        error,
-        updatedAt: now
-      }))
+      update(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.recordUncertain(
+          intent,
+          dispatchGeneration,
+          now,
+          error
+        )
+      )
 
     const recordFailed: DeliveryStoreShape["recordFailed"] = (
       deliveryId,
       dispatchGeneration,
       error
     ) =>
-      update(deliveryId, dispatchGeneration, (intent, now) => ({
-        ...intent,
-        status: "failed",
-        error,
-        updatedAt: now
-      }))
+      update(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.recordFailed(
+          intent,
+          dispatchGeneration,
+          now,
+          error
+        )
+      )
 
     const recordDeferred: DeliveryStoreShape["recordDeferred"] = (
       deliveryId,
@@ -447,16 +380,15 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
       error,
       delayMillis
     ) =>
-      update(deliveryId, dispatchGeneration, (intent, now) => ({
-        ...intent,
-        status: "pending",
-        error,
-        nextAttemptAt: DateTime.addDuration(
+      update(deliveryId, dispatchGeneration, (intent, now) =>
+        Transitions.recordDeferred(
+          intent,
+          dispatchGeneration,
           now,
-          Duration.millis(delayMillis)
-        ),
-        updatedAt: now
-      }))
+          error,
+          delayMillis
+        )
+      )
 
     const requestCancellation: DeliveryStoreShape["requestCancellation"] = (
       deliveryId
@@ -474,11 +406,10 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
             return intents
           }
           const next = new Map(intents)
-          next.set(deliveryId, {
-            ...intent,
-            cancellationRequested: true,
-            updatedAt: now
-          })
+          next.set(
+            deliveryId,
+            Transitions.requestCancellation(intent, now)
+          )
           return next
         })
       })
@@ -500,32 +431,21 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           state,
           (
             intents
-          ): readonly [RedriveResult, ReadonlyMap<string, DeliveryIntent>] => {
+          ): readonly [
+            DeliveryIntent | StoreUnavailable,
+            ReadonlyMap<string, DeliveryIntent>
+          ] => {
             const intent = intents.get(deliveryId)
             if (intent === undefined) {
-              return [missing(deliveryId), intents]
+              return [Transitions.missingIntent(deliveryId), intents]
             }
-            const {
-              receipt: _receipt,
-              error: _error,
-              nextAttemptAt: _nextAttemptAt,
-              queuedAt: _queuedAt,
-              ...base
-            } = intent
-            const nextIntent: DeliveryIntent = {
-              ...base,
-              dispatchGeneration: intent.dispatchGeneration + 1,
-              status: "pending",
-              attempts: 0,
-              cancellationRequested: false,
-              updatedAt: now
-            }
+            const nextIntent = Transitions.redrive(intent, now)
             const next = new Map(intents)
             next.set(deliveryId, nextIntent)
-            return [{ _tag: "ok", intent: nextIntent }, next]
+            return [nextIntent, next]
           }
         )
-        if (result._tag === "StoreUnavailable") {
+        if (result instanceof StoreUnavailable) {
           return yield* result
         }
         yield* Ref.update(cancellations, (current) => {
@@ -533,9 +453,8 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           next.delete(deliveryId)
           return next
         })
-        return result.intent
+        return result
       })
-
     const listByStatus = (
       status: DeliveryStatus
     ): Effect.Effect<ReadonlyArray<DeliveryIntent>, StoreUnavailable> =>
@@ -558,22 +477,22 @@ export const layerMemory: Layer.Layer<DeliveryStore> = Layer.effect(
           return [true, next]
         })
         if (inserted && event.deliveryId !== undefined) {
-          const status = deliveryStatusForEvent(event.type)
-          if (status !== undefined) {
-            yield* Ref.update(state, (intents) => {
-              const intent = intents.get(event.deliveryId!)
-              if (intent === undefined) {
-                return intents
-              }
-              const next = new Map(intents)
-              next.set(event.deliveryId!, {
-                ...intent,
-                status,
-                updatedAt: event.occurredAt
-              })
-              return next
-            })
-          }
+          yield* Ref.update(state, (intents) => {
+            const intent = intents.get(event.deliveryId!)
+            if (intent === undefined) {
+              return intents
+            }
+            const nextIntent = Transitions.applyProviderEvent(
+              intent,
+              event
+            )
+            if (nextIntent === intent) {
+              return intents
+            }
+            const next = new Map(intents)
+            next.set(event.deliveryId!, nextIntent)
+            return next
+          })
         }
         return inserted
       })
